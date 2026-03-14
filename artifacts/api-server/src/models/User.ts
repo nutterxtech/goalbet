@@ -1,5 +1,6 @@
 import mongoose, { Schema, Document } from "mongoose";
 import bcrypt from "bcryptjs";
+import { nanoid } from "nanoid";
 
 export interface IUser extends Document {
   username: string;
@@ -14,6 +15,10 @@ export interface IUser extends Document {
   totalWinnings: number;
   totalDeposits: number;
   totalWithdrawals: number;
+  referralCode: string;
+  referredBy?: string;
+  referralEarnings: number;
+  referralCount: number;
   createdAt: Date;
   updatedAt: Date;
   comparePassword(password: string): Promise<boolean>;
@@ -33,6 +38,10 @@ const UserSchema = new Schema<IUser>(
     totalWinnings: { type: Number, default: 0 },
     totalDeposits: { type: Number, default: 0 },
     totalWithdrawals: { type: Number, default: 0 },
+    referralCode: { type: String, unique: true, sparse: true },
+    referredBy: { type: String },
+    referralEarnings: { type: Number, default: 0 },
+    referralCount: { type: Number, default: 0 },
   },
   { timestamps: true }
 );
@@ -40,6 +49,9 @@ const UserSchema = new Schema<IUser>(
 UserSchema.pre("save", async function () {
   if (!this.isModified("password")) return;
   this.password = await bcrypt.hash(this.password, 12);
+  if (!this.referralCode) {
+    this.referralCode = nanoid(8).toUpperCase();
+  }
 });
 
 UserSchema.methods.comparePassword = async function (password: string) {

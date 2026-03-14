@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { UserLayout } from "@/components/layout/UserLayout";
 import { useGetTransactions, useDeposit, useWithdraw } from "@workspace/api-client-react";
+import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -9,14 +10,27 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { ArrowDownToLine, ArrowUpFromLine, Loader2 } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, Loader2, Smartphone, CheckCircle2, Share2, Copy } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 
 export default function TransactionsPage() {
   const { data, isLoading } = useGetTransactions({ page: 1, limit: 50 });
+  const { user } = useAuth();
   const [depositOpen, setDepositOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const { toast } = useToast();
+
+  const referralLink = user?.referralCode
+    ? `${window.location.origin}${import.meta.env.BASE_URL}register?ref=${user.referralCode}`
+    : "";
+
+  function copyReferralLink() {
+    if (referralLink) {
+      navigator.clipboard.writeText(referralLink);
+      toast({ title: "Copied!", description: "Referral link copied to clipboard." });
+    }
+  }
 
   return (
     <UserLayout>
@@ -34,6 +48,34 @@ export default function TransactionsPage() {
           </Button>
         </div>
       </div>
+
+      {/* Referral Card */}
+      {user?.referralCode && (
+        <Card className="border-primary/30 bg-primary/5 mb-6">
+          <CardContent className="p-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <Share2 className="w-4 h-4 text-primary" />
+                  <span className="font-bold text-primary">Refer &amp; Earn KSh 5</span>
+                </div>
+                <p className="text-sm text-muted-foreground">Share your referral link — earn <strong className="text-white">KSh 5</strong> for every friend that joins.</p>
+                <div className="flex items-center gap-2 mt-3">
+                  <span className="text-xs text-muted-foreground">Friends referred: <strong className="text-white">{user.referralCount ?? 0}</strong></span>
+                  <span className="text-xs text-muted-foreground">•</span>
+                  <span className="text-xs text-muted-foreground">Total earned: <strong className="text-primary">{formatCurrency(user.referralEarnings ?? 0)}</strong></span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <code className="text-xs bg-card border border-border px-3 py-2 rounded-lg font-mono">{user.referralCode}</code>
+                <Button size="sm" variant="outline" className="shrink-0" onClick={copyReferralLink}>
+                  <Copy className="w-3.5 h-3.5 mr-1.5" /> Copy Link
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="border-border/50 bg-card/80 backdrop-blur overflow-hidden">
         <CardContent className="p-0">
@@ -94,45 +136,135 @@ export default function TransactionsPage() {
 
 function DepositModal({ open, onOpenChange }: { open: boolean, onOpenChange: (open: boolean) => void }) {
   const [amount, setAmount] = useState("100");
+  const [step, setStep] = useState<"amount" | "mpesa" | "success">("amount");
+  const [countdown, setCountdown] = useState(15);
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  
+  const { user } = useAuth();
+
   const mutation = useDeposit({
     mutation: {
       onSuccess: () => {
-        toast({ title: "Deposit Successful", description: "Funds added to your account." });
+        setStep("success");
         queryClient.invalidateQueries({ queryKey: ["/api/user/balance"] });
         queryClient.invalidateQueries({ queryKey: ["/api/user/transactions"] });
-        onOpenChange(false);
+        queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
       },
-      onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" })
+      onError: (err: any) => {
+        toast({ title: "Deposit failed", description: err.message, variant: "destructive" });
+        setStep("amount");
+      }
     }
   });
 
+  // Simulate M-Pesa STK push countdown
+  useEffect(() => {
+    if (step !== "mpesa") return;
+    setCountdown(15);
+    const interval = setInterval(() => {
+      setCountdown(prev => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          // Auto-confirm after countdown
+          mutation.mutate({ data: { amount: parseFloat(amount) } });
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [step]);
+
+  function handleClose(open: boolean) {
+    if (!open) {
+      setStep("amount");
+      setAmount("100");
+    }
+    onOpenChange(open);
+  }
+
+  const phone = user?.phone || "your registered phone";
+  const parsedAmount = parseFloat(amount) || 0;
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="border-border bg-card">
-        <DialogHeader>
-          <DialogTitle>Deposit Funds</DialogTitle>
-          <DialogDescription>Add funds to your GoalBet wallet (Min KSh 20)</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4 py-4">
-          <Input 
-            type="number" 
-            placeholder="Amount" 
-            value={amount} 
-            onChange={(e) => setAmount(e.target.value)}
-            className="text-lg h-12"
-          />
-          <Button 
-            className="w-full h-12" 
-            onClick={() => mutation.mutate({ data: { amount: parseFloat(amount) } })}
-            disabled={mutation.isPending || parseFloat(amount) < 20}
-          >
-            {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Deposit {amount && !isNaN(parseFloat(amount)) ? formatCurrency(parseFloat(amount)) : ''}
-          </Button>
-        </div>
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent className="border-border bg-card max-w-sm">
+        {step === "amount" && (
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2"><Smartphone className="w-5 h-5 text-primary" /> Deposit via M-Pesa</DialogTitle>
+              <DialogDescription>An STK push will be sent to your phone. Min KSh 20.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <label className="text-sm text-muted-foreground">Amount (KSh)</label>
+                <Input
+                  type="number"
+                  placeholder="e.g. 100"
+                  value={amount}
+                  onChange={e => setAmount(e.target.value)}
+                  className="text-lg h-12 font-mono"
+                />
+              </div>
+              <div className="p-3 bg-secondary/40 rounded-lg text-sm border border-border/50 flex items-center gap-2">
+                <Smartphone className="w-4 h-4 text-primary shrink-0" />
+                <span className="text-muted-foreground">Push will be sent to: <strong className="text-white">{phone}</strong></span>
+              </div>
+              <Button
+                className="w-full h-12 font-bold"
+                onClick={() => setStep("mpesa")}
+                disabled={parsedAmount < 20}
+              >
+                Send M-Pesa Prompt — {parsedAmount >= 20 ? formatCurrency(parsedAmount) : 'KSh 0'}
+              </Button>
+            </div>
+          </>
+        )}
+
+        {step === "mpesa" && (
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                Waiting for M-Pesa...
+              </DialogTitle>
+              <DialogDescription>Check your phone and enter your M-Pesa PIN to confirm.</DialogDescription>
+            </DialogHeader>
+            <div className="py-4 space-y-6 text-center">
+              <div className="mx-auto w-24 h-24 rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center">
+                <span className="text-3xl font-display font-black text-primary">{countdown}</span>
+              </div>
+              <div className="space-y-1">
+                <p className="font-semibold text-white">STK Push Sent</p>
+                <p className="text-sm text-muted-foreground">An M-Pesa prompt for <strong className="text-white">{formatCurrency(parsedAmount)}</strong> was sent to <strong className="text-white">{phone}</strong>.</p>
+                <p className="text-xs text-muted-foreground mt-2">Auto-confirming in {countdown}s...</p>
+              </div>
+              <p className="text-xs text-muted-foreground border border-border/40 rounded-lg p-3 bg-secondary/30">
+                💡 In a live environment, your real M-Pesa PIN would authorize this. This simulation confirms automatically.
+              </p>
+            </div>
+          </>
+        )}
+
+        {step === "success" && (
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-primary">
+                <CheckCircle2 className="w-5 h-5" /> Deposit Successful!
+              </DialogTitle>
+            </DialogHeader>
+            <div className="py-6 text-center space-y-4">
+              <div className="mx-auto w-20 h-20 rounded-full bg-primary/10 border-2 border-primary flex items-center justify-center">
+                <CheckCircle2 className="w-10 h-10 text-primary" />
+              </div>
+              <div>
+                <p className="text-2xl font-display font-black text-primary">{formatCurrency(parsedAmount)}</p>
+                <p className="text-muted-foreground text-sm mt-1">has been added to your wallet</p>
+              </div>
+              <Button className="w-full" onClick={() => handleClose(false)}>Done</Button>
+            </div>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );

@@ -24,6 +24,7 @@ export interface RegisterRequest {
   email: string;
   password: string;
   phone?: string;
+  referralCode?: string;
 }
 
 export interface LoginRequest {
@@ -59,6 +60,9 @@ export interface UserProfile {
   totalBets?: number;
   totalWins?: number;
   totalWinnings?: number;
+  referralCode?: string;
+  referralCount?: number;
+  referralEarnings?: number;
   createdAt?: string;
 }
 

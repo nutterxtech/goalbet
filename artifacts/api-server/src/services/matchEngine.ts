@@ -4,13 +4,10 @@ import { User } from "../models/User.js";
 import { Transaction } from "../models/Transaction.js";
 import { Notification } from "../models/Notification.js";
 import { getConfig } from "../models/PlatformConfig.js";
-
-const FOOTBALL_PLAYERS = {
-  home: ["Player A", "Player B", "Player C", "Player D", "Player E"],
-  away: ["Player V", "Player W", "Player X", "Player Y", "Player Z"],
-};
+import { TEAMS, TeamData } from "../data/teams.js";
 
 const activeSimulations = new Map<string, NodeJS.Timeout>();
+let autoSchedulerTimer: NodeJS.Timeout | null = null;
 
 function getRandomInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -20,6 +17,20 @@ function determineResult(homeScore: number, awayScore: number): "home" | "draw" 
   if (homeScore > awayScore) return "home";
   if (awayScore > homeScore) return "away";
   return "draw";
+}
+
+function getForwardsAndMidfielders(team: TeamData): string[] {
+  return team.players
+    .filter(p => p.position === "FWD" || p.position === "MID")
+    .map(p => p.name);
+}
+
+function getTeamData(teamName: string): TeamData | null {
+  return TEAMS.find(t => t.name === teamName || t.code === teamName) || null;
+}
+
+function pickRandom<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)];
 }
 
 async function settleBets(match: IMatch) {
@@ -100,13 +111,22 @@ export async function startMatchSimulation(matchId: string): Promise<void> {
   let awayScore = 0;
   const events: IMatch["events"] = [];
 
+  const matchDoc = await Match.findById(matchId);
+  const homeTeamData = matchDoc ? getTeamData(matchDoc.homeTeam) : null;
+  const awayTeamData = matchDoc ? getTeamData(matchDoc.awayTeam) : null;
+
+  const homePlayers = homeTeamData ? getForwardsAndMidfielders(homeTeamData) : ["Player A", "Player B", "Player C"];
+  const awayPlayers = awayTeamData ? getForwardsAndMidfielders(awayTeamData) : ["Player X", "Player Y", "Player Z"];
+  const homeDefenders = homeTeamData?.players.filter(p => p.position === "DEF").map(p => p.name) || ["Defender"];
+  const awayDefenders = awayTeamData?.players.filter(p => p.position === "DEF").map(p => p.name) || ["Defender"];
+
   await Match.findByIdAndUpdate(matchId, {
     status: "live",
     startedAt: new Date(),
     minute: 0,
     homeScore: 0,
     awayScore: 0,
-    events: [{ minute: 0, type: "kickoff", team: "home", description: "Match kicked off!" }],
+    events: [{ minute: 0, type: "kickoff", team: "home", description: `⚽ Kick off! ${matchDoc?.homeTeam} vs ${matchDoc?.awayTeam}` }],
   });
 
   const interval = setInterval(async () => {
@@ -122,7 +142,7 @@ export async function startMatchSimulation(matchId: string): Promise<void> {
           minute: 90,
           type: "fulltime",
           team: "home",
-          description: `Full time! Final score: ${homeScore}-${awayScore}`,
+          description: `🏁 Full time! Final score: ${homeScore}-${awayScore}`,
         });
 
         await Match.findByIdAndUpdate(matchId, {
@@ -140,14 +160,6 @@ export async function startMatchSimulation(matchId: string): Promise<void> {
           await settleBets(match);
         }
 
-        // Notify all users about match completion
-        await Notification.create({
-          userId: null,
-          type: "match_completed",
-          message: `Match ended: ${homeScore}-${awayScore}`,
-          data: { matchId, result },
-        });
-
         return;
       }
 
@@ -156,16 +168,16 @@ export async function startMatchSimulation(matchId: string): Promise<void> {
           minute: 45,
           type: "halftime",
           team: "home",
-          description: `Half time! Score: ${homeScore}-${awayScore}`,
+          description: `🔔 Half time! Score: ${homeScore}-${awayScore}`,
         });
       }
 
-      // Random goal probability (about 2-4 goals per match)
-      const goalProbability = 0.033; // ~3% per minute = ~2.7 goals/90min
+      // Goal probability ~2.8 goals per match average
+      const goalProbability = 0.031;
       if (Math.random() < goalProbability) {
-        const scoringTeam: "home" | "away" = Math.random() < 0.5 ? "home" : "away";
-        const players = FOOTBALL_PLAYERS[scoringTeam];
-        const player = players[getRandomInt(0, players.length - 1)];
+        const scoringTeam: "home" | "away" = Math.random() < 0.52 ? "home" : "away";
+        const player = scoringTeam === "home" ? pickRandom(homePlayers) : pickRandom(awayPlayers);
+        const teamName = scoringTeam === "home" ? matchDoc?.homeTeam : matchDoc?.awayTeam;
 
         if (scoringTeam === "home") homeScore++;
         else awayScore++;
@@ -175,22 +187,57 @@ export async function startMatchSimulation(matchId: string): Promise<void> {
           type: "goal",
           team: scoringTeam,
           player,
-          description: `GOAL! ${player} scores for ${scoringTeam} team! ${homeScore}-${awayScore}`,
+          description: `⚽ GOAL! ${player} scores for ${teamName}! ${homeScore}-${awayScore}`,
         });
       }
 
-      // Yellow card (rare)
-      if (Math.random() < 0.015) {
+      // Yellow card
+      if (Math.random() < 0.018) {
         const cardTeam: "home" | "away" = Math.random() < 0.5 ? "home" : "away";
-        const players = FOOTBALL_PLAYERS[cardTeam];
-        const player = players[getRandomInt(0, players.length - 1)];
+        const allPlayers = cardTeam === "home"
+          ? [...homePlayers, ...homeDefenders]
+          : [...awayPlayers, ...awayDefenders];
+        const player = pickRandom(allPlayers);
         events.push({
           minute: currentMinute,
           type: "yellowCard",
           team: cardTeam,
           player,
-          description: `Yellow card shown to ${player}`,
+          description: `🟨 Yellow card shown to ${player}`,
         });
+      }
+
+      // Red card (very rare)
+      if (Math.random() < 0.004) {
+        const cardTeam: "home" | "away" = Math.random() < 0.5 ? "home" : "away";
+        const allPlayers = cardTeam === "home"
+          ? [...homePlayers, ...homeDefenders]
+          : [...awayPlayers, ...awayDefenders];
+        const player = pickRandom(allPlayers);
+        events.push({
+          minute: currentMinute,
+          type: "redCard",
+          team: cardTeam,
+          player,
+          description: `🟥 Red card! ${player} is sent off!`,
+        });
+      }
+
+      // Substitution
+      if (Math.random() < 0.012 && currentMinute >= 55) {
+        const subTeam: "home" | "away" = Math.random() < 0.5 ? "home" : "away";
+        const teamPlayers = subTeam === "home" ? homeTeamData?.players : awayTeamData?.players;
+        if (teamPlayers && teamPlayers.length >= 2) {
+          const outPlayer = pickRandom(teamPlayers).name;
+          const inPlayer = pickRandom(teamPlayers.filter(p => p.name !== outPlayer)).name;
+          events.push({
+            minute: currentMinute,
+            type: "substitution",
+            team: subTeam,
+            player: inPlayer,
+            description: `🔄 Substitution: ${inPlayer} comes on for ${outPlayer}`,
+          });
+        }
       }
 
       await Match.findByIdAndUpdate(matchId, {
@@ -229,4 +276,84 @@ export async function openBettingWindow(matchId: string): Promise<void> {
     status: "betting_open",
     bettingClosesAt: closeAt,
   });
+}
+
+// Auto-scheduler: creates and starts matches automatically every N minutes
+export function startAutoScheduler(): void {
+  if (autoSchedulerTimer) return;
+
+  async function runScheduler() {
+    try {
+      // Check for upcoming matches that should have started by now
+      const now = new Date();
+      const scheduledMatches = await Match.find({
+        status: "upcoming",
+        scheduledAt: { $lte: now },
+      });
+
+      for (const match of scheduledMatches) {
+        console.log(`Auto-starting scheduled match: ${match.homeTeam} vs ${match.awayTeam}`);
+        startMatchSimulation(match.id).catch(console.error);
+      }
+
+      // Auto-generate new matches if there are fewer than 3 upcoming/betting_open matches
+      const activeCount = await Match.countDocuments({
+        status: { $in: ["upcoming", "betting_open"] },
+      });
+
+      if (activeCount < 3) {
+        const shuffledTeams = [...TEAMS].sort(() => Math.random() - 0.5);
+        const usedTeams = new Set<string>();
+        const pairsToCreate = 3 - activeCount;
+
+        let created = 0;
+        for (let i = 0; i < shuffledTeams.length - 1 && created < pairsToCreate; i++) {
+          const home = shuffledTeams[i];
+          const away = shuffledTeams[i + 1];
+
+          if (usedTeams.has(home.name) || usedTeams.has(away.name)) continue;
+          if (home.name === away.name) continue;
+
+          usedTeams.add(home.name);
+          usedTeams.add(away.name);
+
+          // Generate realistic odds based on random strength
+          const homeStrength = 0.4 + Math.random() * 0.3;
+          const awayStrength = 1 - homeStrength - 0.15;
+          const drawStrength = 0.15;
+
+          const homeOdds = parseFloat((1 / homeStrength).toFixed(2));
+          const awayOdds = parseFloat((1 / awayStrength).toFixed(2));
+          const drawOdds = parseFloat((1 / drawStrength).toFixed(2));
+
+          await Match.create({
+            homeTeam: home.name,
+            awayTeam: away.name,
+            homeTeamCode: home.code,
+            awayTeamCode: away.code,
+            league: home.league,
+            odds: { home: homeOdds, draw: drawOdds, away: awayOdds },
+            status: "upcoming",
+            scheduledAt: new Date(Date.now() + 2 * 60 * 1000), // 2 min from now
+          });
+
+          created++;
+        }
+      }
+    } catch (err) {
+      console.error("Auto-scheduler error:", err);
+    }
+  }
+
+  // Run immediately then every 60 seconds
+  runScheduler();
+  autoSchedulerTimer = setInterval(runScheduler, 60 * 1000);
+  console.log("⏰ Match auto-scheduler started");
+}
+
+export function stopAutoScheduler(): void {
+  if (autoSchedulerTimer) {
+    clearInterval(autoSchedulerTimer);
+    autoSchedulerTimer = null;
+  }
 }

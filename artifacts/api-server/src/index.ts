@@ -1,4 +1,5 @@
 import app from "./app";
+import { startAutoScheduler } from "./services/matchEngine.js";
 
 const rawPort = process.env["PORT"];
 
@@ -16,4 +17,8 @@ if (Number.isNaN(port) || port <= 0) {
 
 app.listen(port, () => {
   console.log(`Server listening on port ${port}`);
+  // Start auto-scheduler after DB connects (connectDB fires in app.ts)
+  setTimeout(() => {
+    startAutoScheduler();
+  }, 3000);
 });

@@ -112,6 +112,45 @@ router.put("/users/:id/status", async (req: AuthRequest, res) => {
   res.json({ success: true, message: `User status updated to ${status}` });
 });
 
+// DELETE /admin/users/:id
+router.delete("/users/:id", async (req: AuthRequest, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      res.status(404).json({ message: "User not found" });
+      return;
+    }
+    if (user.role === "admin") {
+      res.status(400).json({ message: "Cannot delete admin accounts" });
+      return;
+    }
+    await User.findByIdAndDelete(req.params.id);
+    await Bet.deleteMany({ userId: req.params.id });
+    await Transaction.deleteMany({ userId: req.params.id });
+    await logAction(req.user!.id, "DELETE_USER", `Deleted user account: ${user.username} (${user.email})`, user.id, "User");
+    res.json({ success: true, message: `User ${user.username} deleted` });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// GET /admin/users/:id/transactions
+router.get("/users/:id/transactions", async (req: AuthRequest, res) => {
+  try {
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+    const [txs, total] = await Promise.all([
+      Transaction.find({ userId: req.params.id }).sort({ createdAt: -1 }).skip(skip).limit(limit),
+      Transaction.countDocuments({ userId: req.params.id }),
+    ]);
+    res.json({ transactions: txs, total, page, totalPages: Math.ceil(total / limit) });
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 // PUT /admin/users/:id/balance
 router.put("/users/:id/balance", async (req: AuthRequest, res) => {
   const { amount, reason } = req.body;
@@ -589,6 +628,7 @@ router.get("/bets", async (req: AuthRequest, res) => {
   const skip = (page - 1) * limit;
   const filter: Record<string, unknown> = {};
   if (req.query.matchId) filter.matchId = req.query.matchId;
+  if (req.query.status) filter.status = req.query.status;
 
   const [bets, total] = await Promise.all([
     Bet.find(filter)
@@ -599,6 +639,23 @@ router.get("/bets", async (req: AuthRequest, res) => {
       .limit(limit),
     Bet.countDocuments(filter),
   ]);
+
+  // Compute bet distribution per match if matchId filter applied
+  let betDistribution = null;
+  if (req.query.matchId) {
+    const allMatchBets = await Bet.find({ matchId: req.query.matchId });
+    const homeMoney = allMatchBets.filter(b => b.outcome === "home").reduce((s, b) => s + b.amount, 0);
+    const drawMoney = allMatchBets.filter(b => b.outcome === "draw").reduce((s, b) => s + b.amount, 0);
+    const awayMoney = allMatchBets.filter(b => b.outcome === "away").reduce((s, b) => s + b.amount, 0);
+    const total = homeMoney + drawMoney + awayMoney;
+    betDistribution = {
+      home: { amount: homeMoney, count: allMatchBets.filter(b => b.outcome === "home").length, pct: total ? Math.round(homeMoney / total * 100) : 0 },
+      draw: { amount: drawMoney, count: allMatchBets.filter(b => b.outcome === "draw").length, pct: total ? Math.round(drawMoney / total * 100) : 0 },
+      away: { amount: awayMoney, count: allMatchBets.filter(b => b.outcome === "away").length, pct: total ? Math.round(awayMoney / total * 100) : 0 },
+      totalAmount: total,
+      leadingSide: homeMoney >= drawMoney && homeMoney >= awayMoney ? "home" : awayMoney >= drawMoney ? "away" : "draw",
+    };
+  }
 
   res.json({
     bets: bets.map((b) => {
@@ -624,6 +681,7 @@ router.get("/bets", async (req: AuthRequest, res) => {
     total,
     page,
     totalPages: Math.ceil(total / limit),
+    betDistribution,
   });
 });
 

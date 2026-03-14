@@ -1,6 +1,6 @@
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Trophy, Zap, Shield, ChevronRight } from "lucide-react";
+import { Trophy, Zap, Shield, ChevronRight, Gift } from "lucide-react";
 import { Navbar } from "@/components/layout/Navbar";
 
 export default function LandingPage() {
@@ -139,6 +139,58 @@ export default function LandingPage() {
                 </div>
                 <h3 className="text-xl font-bold mb-3">{feature.title}</h3>
                 <p className="text-muted-foreground leading-relaxed">{feature.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Referral Section */}
+      <section className="py-24 border-t border-border overflow-hidden relative">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_rgba(0,230,92,0.08)_0%,_transparent_70%)]" />
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center relative z-10">
+          <div className="inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-sm font-medium text-primary mb-6">
+            <Gift className="mr-2 h-4 w-4" /> Refer & Earn
+          </div>
+          <h2 className="text-3xl md:text-5xl font-display font-bold mb-6">Share the wins, earn together</h2>
+          <p className="text-muted-foreground text-lg max-w-2xl mx-auto mb-12">
+            Every time a friend signs up using your personal referral link, they get started and you earn <span className="text-primary font-bold">KSh 5</span> instantly — no limits, no caps.
+          </p>
+          <div className="grid sm:grid-cols-3 gap-6">
+            {[
+              { step: "01", title: "Get your link", desc: "Find your unique referral code in your dashboard after signing up." },
+              { step: "02", title: "Invite friends", desc: "Share your link via WhatsApp, SMS, or social media." },
+              { step: "03", title: "Earn KSh 5", desc: "Get KSh 5 credited to your wallet every time a friend joins." },
+            ].map((item) => (
+              <div key={item.step} className="bg-card border border-border/50 rounded-2xl p-6 text-left hover:border-primary/40 transition-colors">
+                <div className="text-4xl font-display font-black text-primary/30 mb-3">{item.step}</div>
+                <h3 className="font-bold text-lg mb-2">{item.title}</h3>
+                <p className="text-muted-foreground text-sm">{item.desc}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-10">
+            <Link href="/register">
+              <Button size="lg" className="h-14 px-8 text-lg font-bold bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl">
+                Join &amp; Start Referring <ChevronRight className="ml-2 h-5 w-5" />
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* Stats Section */}
+      <section className="py-16 bg-card/50 border-t border-border">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid sm:grid-cols-3 gap-8 text-center">
+            {[
+              { value: "120s", label: "Match Duration" },
+              { value: "KSh 5", label: "Min Bet" },
+              { value: "12%", label: "Withdrawal Fee" },
+            ].map((stat) => (
+              <div key={stat.label}>
+                <div className="text-4xl md:text-5xl font-display font-black text-primary mb-2">{stat.value}</div>
+                <div className="text-muted-foreground font-medium">{stat.label}</div>
               </div>
             ))}
           </div>

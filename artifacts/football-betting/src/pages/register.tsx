@@ -8,22 +8,27 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2 } from "lucide-react";
+import { Loader2, Gift } from "lucide-react";
 
 const registerSchema = z.object({
   username: z.string().min(3, "Username must be at least 3 characters").max(20),
   email: z.string().email("Please enter a valid email"),
   password: z.string().min(6, "Password must be at least 6 characters"),
   phone: z.string().optional(),
+  referralCode: z.string().optional(),
 });
 
 export default function Register() {
   const { register } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
 
+  // Pick up referral code from URL param
+  const urlParams = new URLSearchParams(window.location.search);
+  const refFromUrl = urlParams.get("ref") || "";
+
   const form = useForm<z.infer<typeof registerSchema>>({
     resolver: zodResolver(registerSchema),
-    defaultValues: { username: "", email: "", password: "", phone: "" },
+    defaultValues: { username: "", email: "", password: "", phone: "", referralCode: refFromUrl },
   });
 
   async function onSubmit(values: z.infer<typeof registerSchema>) {
@@ -102,6 +107,27 @@ export default function Register() {
                     <FormControl>
                       <Input type="password" placeholder="••••••••" {...field} className="bg-background h-11" />
                     </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="referralCode"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="flex items-center gap-1.5">
+                      <Gift className="w-3.5 h-3.5 text-primary" /> Referral Code
+                      <span className="text-muted-foreground font-normal">(optional)</span>
+                    </FormLabel>
+                    <FormControl>
+                      <Input placeholder="FRIEND123" {...field} className="bg-background h-11 uppercase" onChange={e => field.onChange(e.target.value.toUpperCase())} />
+                    </FormControl>
+                    {field.value && (
+                      <p className="text-xs text-primary flex items-center gap-1">
+                        <Gift className="w-3 h-3" /> Your friend earns KSh 5 when you join!
+                      </p>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )}

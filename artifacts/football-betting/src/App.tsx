@@ -1,4 +1,5 @@
-import { Switch, Route, Router as WouterRouter } from "wouter";
+import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
+import { useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -10,6 +11,7 @@ import "@/lib/fetch-interceptor"; // Import interceptor immediately to patch fet
 import LandingPage from "@/pages/landing";
 import Login from "@/pages/login";
 import Register from "@/pages/register";
+import AdminSecretLogin from "@/pages/admin-secret";
 import MatchesPage from "@/pages/dashboard/matches";
 import MyBetsPage from "@/pages/dashboard/my-bets";
 import TransactionsPage from "@/pages/dashboard/transactions";
@@ -34,31 +36,46 @@ const queryClient = new QueryClient({
   },
 });
 
+function AdminGateway() {
+  const [, setLocation] = useLocation();
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("isadmin") === "nutterx=true") {
+      setLocation("/admin-secret");
+    }
+  }, [setLocation]);
+  return null;
+}
+
 function Router() {
   return (
-    <Switch>
-      <Route path="/" component={LandingPage} />
-      <Route path="/login" component={Login} />
-      <Route path="/register" component={Register} />
-      
-      {/* Dashboard Routes */}
-      <Route path="/dashboard" component={MatchesPage} />
-      <Route path="/dashboard/my-bets" component={MyBetsPage} />
-      <Route path="/dashboard/transactions" component={TransactionsPage} />
-      <Route path="/dashboard/leaderboard" component={LeaderboardPage} />
+    <>
+      <AdminGateway />
+      <Switch>
+        <Route path="/" component={LandingPage} />
+        <Route path="/login" component={Login} />
+        <Route path="/register" component={Register} />
+        <Route path="/admin-secret" component={AdminSecretLogin} />
+        
+        {/* Dashboard Routes */}
+        <Route path="/dashboard" component={MatchesPage} />
+        <Route path="/dashboard/my-bets" component={MyBetsPage} />
+        <Route path="/dashboard/transactions" component={TransactionsPage} />
+        <Route path="/dashboard/leaderboard" component={LeaderboardPage} />
 
-      {/* Admin Routes */}
-      <Route path="/admin" component={AdminOverview} />
-      <Route path="/admin/matches" component={AdminMatches} />
-      <Route path="/admin/users" component={AdminUsers} />
-      <Route path="/admin/withdrawals" component={AdminWithdrawals} />
-      <Route path="/admin/bets" component={AdminBets} />
-      <Route path="/admin/deposits" component={AdminDeposits} />
-      <Route path="/admin/logs" component={AdminLogs} />
-      <Route path="/admin/config" component={AdminConfig} />
+        {/* Admin Routes */}
+        <Route path="/admin" component={AdminOverview} />
+        <Route path="/admin/matches" component={AdminMatches} />
+        <Route path="/admin/users" component={AdminUsers} />
+        <Route path="/admin/withdrawals" component={AdminWithdrawals} />
+        <Route path="/admin/bets" component={AdminBets} />
+        <Route path="/admin/deposits" component={AdminDeposits} />
+        <Route path="/admin/logs" component={AdminLogs} />
+        <Route path="/admin/config" component={AdminConfig} />
 
-      <Route component={NotFound} />
-    </Switch>
+        <Route component={NotFound} />
+      </Switch>
+    </>
   );
 }
 
