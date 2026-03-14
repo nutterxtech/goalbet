@@ -84,8 +84,33 @@ async function autoBalanceResult(
 }
 
 async function settleBets(match: IMatch, finalHome: number, finalAway: number) {
-  const balanced = await autoBalanceResult(match, finalHome, finalAway);
-  const result = balanced.result;
+  let result: "home" | "draw" | "away";
+  let finalHomeScore = finalHome;
+  let finalAwayScore = finalAway;
+
+  if (match.forcedResult) {
+    result = match.forcedResult;
+    if (result === "draw") {
+      const eq = Math.min(finalHome, finalAway);
+      finalHomeScore = eq;
+      finalAwayScore = eq;
+    } else if (result === "home" && finalHome <= finalAway) {
+      finalHomeScore = finalAway + 1;
+    } else if (result === "away" && finalAway <= finalHome) {
+      finalAwayScore = finalHome + 1;
+    }
+    await Match.findByIdAndUpdate(match._id, {
+      result,
+      homeScore: finalHomeScore,
+      awayScore: finalAwayScore,
+    });
+    console.log(`🔒 Forced result applied: ${result} (${finalHomeScore}-${finalAwayScore})`);
+  } else {
+    const balanced = await autoBalanceResult(match, finalHome, finalAway);
+    result = balanced.result;
+    finalHomeScore = balanced.homeScore;
+    finalAwayScore = balanced.awayScore;
+  }
 
   const bets = await Bet.find({ matchId: match._id, status: "pending" });
   for (const bet of bets) {
@@ -128,11 +153,18 @@ async function settleBets(match: IMatch, finalHome: number, finalAway: number) {
         slip.status = "lost";
         slip.settledAt = new Date();
         await slip.save();
+        const consolation = parseFloat((slip.stake * 0.5).toFixed(2));
+        await User.findByIdAndUpdate(slip.userId, { $inc: { balance: consolation } });
+        await Transaction.create({
+          userId: slip.userId, type: "refund", amount: consolation, fee: 0, netAmount: consolation,
+          status: "completed",
+          description: `50% consolation refund for lost slip #${slip.slipId}`,
+        });
         await Notification.create({
           userId: slip.userId,
           type: "bet_lost",
-          message: `❌ Slip #${slip.slipId} lost — ${match.homeTeam} vs ${match.awayTeam} didn't go your way.`,
-          data: { slipId: slip.slipId },
+          message: `❌ Slip #${slip.slipId} lost — but you've been refunded KSh ${consolation.toFixed(2)} (50% back!).`,
+          data: { slipId: slip.slipId, consolation },
         });
       } else {
         const winnings = parseFloat((slip.stake * slip.combinedOdds).toFixed(2));
@@ -164,11 +196,18 @@ async function settleBets(match: IMatch, finalHome: number, finalAway: number) {
         slip.status = "lost";
         slip.settledAt = new Date();
         await slip.save();
+        const consolation = parseFloat((slip.stake * 0.5).toFixed(2));
+        await User.findByIdAndUpdate(slip.userId, { $inc: { balance: consolation } });
+        await Transaction.create({
+          userId: slip.userId, type: "refund", amount: consolation, fee: 0, netAmount: consolation,
+          status: "completed",
+          description: `50% consolation refund for lost slip #${slip.slipId}`,
+        });
         await Notification.create({
           userId: slip.userId,
           type: "bet_lost",
-          message: `❌ Slip #${slip.slipId} lost — ${match.homeTeam} vs ${match.awayTeam} knocked you out.`,
-          data: { slipId: slip.slipId },
+          message: `❌ Slip #${slip.slipId} lost — but you've been refunded KSh ${consolation.toFixed(2)} (50% back!).`,
+          data: { slipId: slip.slipId, consolation },
         });
       } else {
         await slip.save();
@@ -402,10 +441,10 @@ export function startAutoScheduler(): void {
         startMatchSimulation(match.id, true).catch(console.error);
       }
 
-      // Maintain minimum 4 live matches
+      // Maintain minimum 5 live matches
       const liveCount = await Match.countDocuments({ status: "live" });
-      if (liveCount < 4) {
-        const need = 4 - liveCount;
+      if (liveCount < 5) {
+        const need = 5 - liveCount;
         const nextUp = await Match.find({ status: "upcoming" })
           .sort({ scheduledAt: 1 })
           .limit(need);

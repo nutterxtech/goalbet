@@ -14,7 +14,6 @@ import {
   Wallet, 
   User as UserIcon, 
   LogOut, 
-  LayoutDashboard, 
   ShieldCheck
 } from "lucide-react";
 import { useGetNotifications, useGetBalance } from "@workspace/api-client-react";
@@ -92,7 +91,7 @@ export function Navbar() {
                     </div>
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56 border-border/50">
+                <DropdownMenuContent align="end" className="w-60 border-border/50">
                   <DropdownMenuLabel>
                     <div className="flex flex-col space-y-1">
                       <p className="text-sm font-medium leading-none">{user.username}</p>
@@ -100,36 +99,32 @@ export function Navbar() {
                     </div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator className="bg-border/50" />
-                  
+
                   {!isAdmin && (
-                    <div className="sm:hidden px-2 py-1.5 mb-1">
-                      <div className="flex items-center gap-2 p-2 bg-card rounded-md">
-                        <Wallet className="h-4 w-4 text-primary" />
-                        <span className="font-display font-bold text-sm tracking-wide">
-                          {formatCurrency(balanceData?.balance || user.balance || 0)}
+                    <div className="px-2 py-2">
+                      <div className="flex items-center justify-between gap-2 p-3 bg-primary/10 border border-primary/20 rounded-xl">
+                        <div className="flex items-center gap-2">
+                          <Wallet className="h-4 w-4 text-primary" />
+                          <span className="text-xs text-muted-foreground font-medium">Balance</span>
+                        </div>
+                        <span className="font-display font-bold text-sm text-primary tracking-wide">
+                          {formatCurrency(balanceData?.balance ?? user.balance ?? 0)}
                         </span>
                       </div>
                     </div>
                   )}
 
-                  {isAdmin ? (
-                    <Link href="/admin">
-                      <DropdownMenuItem className="cursor-pointer">
-                        <ShieldCheck className="mr-2 h-4 w-4 text-primary" />
-                        <span>Admin Panel</span>
-                      </DropdownMenuItem>
-                    </Link>
-                  ) : (
-                    <Link href="/dashboard">
-                      <DropdownMenuItem className="cursor-pointer">
-                        <LayoutDashboard className="mr-2 h-4 w-4 text-primary" />
-                        <span>Dashboard</span>
-                      </DropdownMenuItem>
-                    </Link>
+                  {isAdmin && (
+                    <div className="px-2 py-2">
+                      <div className="flex items-center gap-2 p-3 bg-primary/10 border border-primary/20 rounded-xl">
+                        <ShieldCheck className="h-4 w-4 text-primary shrink-0" />
+                        <span className="text-xs text-primary font-semibold">Administrator</span>
+                      </div>
+                    </div>
                   )}
-                  
+
                   <DropdownMenuSeparator className="bg-border/50" />
-                  <DropdownMenuItem onClick={() => logout()} className="cursor-pointer text-destructive focus:text-destructive focus:bg-destructive/10">
+                  <DropdownMenuItem onClick={() => logout()} className="cursor-pointer text-destructive focus:text-destructive focus:bg-destructive/10 mx-1 rounded-lg">
                     <LogOut className="mr-2 h-4 w-4" />
                     <span>Log out</span>
                   </DropdownMenuItem>

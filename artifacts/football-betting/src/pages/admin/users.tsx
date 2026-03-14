@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { API_BASE } from "@/lib/api";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { useAdminGetUsers, useAdminUpdateUserStatus } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -38,7 +39,7 @@ export default function AdminUsers() {
     setDeleting(true);
     try {
       const token = localStorage.getItem("goalbet_token");
-      const res = await fetch(`/api/admin/users/${deleteTarget.id}`, {
+      const res = await fetch(`${API_BASE}/admin/users/${deleteTarget.id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });

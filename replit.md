@@ -105,10 +105,15 @@ workspace/
   - No team can be in two active matches simultaneously (same-team conflict check)
   - After betting window closes, 90-minute simulation runs in `matchDurationSeconds` (default: 120 sec)
   - Slips are settled automatically when each match in the slip completes (accumulator logic)
-- **Auto-balance**: If platform would pay out more than collected, engine overrides both result AND score (so display is always consistent — e.g. if overriding to draw, equalises scores)
+- **Auto-balance**: If platform would pay out more than collected, engine overrides both result AND score (so display is always consistent)
+- **Admin forced result**: Admin can set `forcedResult` on any live/upcoming match; the match continues running naturally, but at the end the forced result is applied to bet settlement + score adjusted to match
+- **50% consolation refund**: When a bet slip is settled as lost, 50% of the stake is automatically refunded to the user's balance + creates a "refund" transaction + notification
 - **Halftime pause**: Simulation pauses at 45' (ticker holds at HT) for ~5–6 seconds before second half
 - **Leaderboard**: Only shows users with totalWins > 0
 - **M-Pesa Daraja API**: Real STK push on deposit; real B2C payout on admin withdrawal approval. Credentials stored in PlatformConfig (admin settings). When not configured, endpoint returns graceful error
+- **Teams pool**: 32 teams from PL, La Liga, Bundesliga, Serie A, Ligue 1, Primeira Liga, Eredivisie, Scottish Premiership — supports 5 live + 5-8 upcoming simultaneously without team conflicts
+- **API URL centralized**: `artifacts/football-betting/src/lib/api.ts` exports `API_BASE = "/api"` — all manual fetch calls use this constant
+- **Dashboard separation**: Admin users auto-redirected from `/dashboard` → `/admin`; user profile dropdown shows balance + logout only (no cross-dashboard links)
 
 ## Admin User
 

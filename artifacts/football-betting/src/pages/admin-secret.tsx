@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { API_BASE } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,7 +29,7 @@ export default function AdminSecretLogin() {
     }
     setLoading(true);
     try {
-      const res = await fetch("/api/auth/admin-secret", {
+      const res = await fetch(`${API_BASE}/auth/admin-secret`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ key: adminKey, email, password }),

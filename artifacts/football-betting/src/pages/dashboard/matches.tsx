@@ -92,7 +92,8 @@ export default function MatchesPage() {
     setSlip((prev) => prev.filter((s) => s.matchId !== matchId));
   }, []);
 
-  const completedMatches = data?.matches ?? [];
+  const allMatches = data?.matches ?? [];
+  const completedMatches = activeTab === "completed" ? allMatches.slice(0, 8) : allMatches;
 
   const isEmpty = !isLoading && completedMatches.length === 0;
   const combinedOdds = slip.reduce((acc, s) => acc * s.odds, 1);
@@ -481,6 +482,12 @@ function SlipPanel({
               <span className="text-muted-foreground">Potential Win</span>
               <span className="text-xl font-display font-black text-primary">{formatCurrency(potentialWin)}</span>
             </div>
+            {numStake >= 5 && (
+              <div className="flex justify-between items-center bg-primary/5 border border-primary/20 rounded-lg px-3 py-2 -mx-1">
+                <span className="text-xs text-muted-foreground">If lost — 50% refunded</span>
+                <span className="text-xs font-bold text-primary">+{formatCurrency(numStake * 0.5)} back</span>
+              </div>
+            )}
           </div>
 
           <div className="flex gap-3">

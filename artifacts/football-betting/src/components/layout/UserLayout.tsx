@@ -1,7 +1,8 @@
-import { ReactNode } from "react";
+import { ReactNode, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { Trophy, History, ArrowLeftRight, Activity, Bell } from "lucide-react";
 import { Navbar } from "./Navbar";
+import { useAuth } from "@/hooks/use-auth";
 
 const navItems = [
   { href: "/dashboard", label: "Matches", icon: Activity },
@@ -12,7 +13,14 @@ const navItems = [
 ];
 
 export function UserLayout({ children }: { children: ReactNode }) {
-  const [location] = useLocation();
+  const [location, navigate] = useLocation();
+  const { isAdmin, isLoading } = useAuth();
+
+  useEffect(() => {
+    if (!isLoading && isAdmin) {
+      navigate("/admin");
+    }
+  }, [isAdmin, isLoading, navigate]);
 
   return (
     <div className="min-h-screen bg-background flex flex-col">

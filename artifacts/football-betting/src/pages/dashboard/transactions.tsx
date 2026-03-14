@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { UserLayout } from "@/components/layout/UserLayout";
 import { useGetTransactions, useWithdraw } from "@workspace/api-client-react";
+import { API_BASE } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -159,7 +160,7 @@ function DepositModal({ open, onOpenChange }: { open: boolean, onOpenChange: (op
     pollRef.current = setInterval(async () => {
       try {
         const token = localStorage.getItem("goalbet_token");
-        const res = await fetch(`/api/user/deposit/mpesa/status/${transactionId}`, {
+        const res = await fetch(`${API_BASE}/user/deposit/mpesa/status/${transactionId}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = await res.json();
@@ -184,7 +185,7 @@ function DepositModal({ open, onOpenChange }: { open: boolean, onOpenChange: (op
     setSending(true);
     try {
       const token = localStorage.getItem("goalbet_token");
-      const res = await fetch("/api/user/deposit/mpesa", {
+      const res = await fetch(`${API_BASE}/user/deposit/mpesa`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ amount: parsedAmount, phone: displayPhone }),

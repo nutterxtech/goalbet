@@ -28,6 +28,7 @@ export interface IMatch extends Document {
   startedAt?: Date;
   completedAt?: Date;
   result?: "home" | "draw" | "away";
+  forcedResult?: "home" | "draw" | "away";
   totalBets: number;
   totalBetAmount: number;
   simulationTimer?: string;
@@ -65,6 +66,7 @@ const MatchSchema = new Schema<IMatch>(
     startedAt: Date,
     completedAt: Date,
     result: { type: String, enum: ["home", "draw", "away"] },
+    forcedResult: { type: String, enum: ["home", "draw", "away"] },
     totalBets: { type: Number, default: 0 },
     totalBetAmount: { type: Number, default: 0 },
     simulationTimer: String,

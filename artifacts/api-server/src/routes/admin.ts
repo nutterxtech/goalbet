@@ -388,69 +388,51 @@ router.put("/matches/:id/odds", async (req: AuthRequest, res) => {
 });
 
 // POST /admin/matches/:id/override
+// Sets a forced result that will be applied when the match ends naturally.
+// The match continues running — score and events play out normally.
 router.post("/matches/:id/override", async (req: AuthRequest, res) => {
-  const { result, homeScore, awayScore, reason } = req.body;
+  const { result, reason } = req.body;
   if (!result || !["home", "draw", "away"].includes(result)) {
     res.status(400).json({ message: "Valid result (home/draw/away) is required" });
     return;
   }
 
-  stopMatchSimulation(req.params.id);
-
-  const match = await Match.findByIdAndUpdate(
-    req.params.id,
-    {
-      result,
-      homeScore: homeScore ?? 0,
-      awayScore: awayScore ?? 0,
-      status: "completed",
-      completedAt: new Date(),
-    },
-    { new: true }
-  );
-
+  const match = await Match.findById(req.params.id);
   if (!match) {
     res.status(404).json({ message: "Match not found" });
     return;
   }
-
-  // Settle bets with overridden result
-  const bets = await Bet.find({ matchId: match._id, status: "pending" });
-  for (const bet of bets) {
-    const won = bet.outcome === result;
-    if (won) {
-      const winnings = bet.amount * bet.odds;
-      await bet.updateOne({ status: "won", actualWinnings: winnings, settledAt: new Date() });
-      await User.findByIdAndUpdate(bet.userId, { $inc: { balance: winnings, totalWins: 1, totalWinnings: winnings } });
-      await Transaction.create({
-        userId: bet.userId, type: "winnings", amount: winnings, fee: 0, netAmount: winnings, status: "completed",
-        description: `Winnings from ${match.homeTeam} vs ${match.awayTeam} (result overridden)`,
-      });
-      await Notification.create({ userId: bet.userId, type: "bet_won", message: `🎉 You won KSh ${winnings.toFixed(2)} on ${match.homeTeam} vs ${match.awayTeam}!`, data: { winnings } });
-    } else {
-      await bet.updateOne({ status: "lost", settledAt: new Date() });
-      await Notification.create({ userId: bet.userId, type: "bet_lost", message: `❌ You lost your bet on ${match.homeTeam} vs ${match.awayTeam}.`, data: {} });
-    }
-    await User.findByIdAndUpdate(bet.userId, { $inc: { totalBets: 1 } });
+  if (match.status === "completed" || match.status === "cancelled") {
+    res.status(400).json({ message: "Cannot override a match that has already ended" });
+    return;
   }
 
-  await logAction(req.user!.id, "OVERRIDE_RESULT", `Overridden result for ${match.homeTeam} vs ${match.awayTeam}: ${result} (${homeScore}-${awayScore}). Reason: ${reason || "N/A"}`, match.id, "Match");
+  await Match.findByIdAndUpdate(req.params.id, { forcedResult: result });
 
+  await logAction(
+    req.user!.id,
+    "OVERRIDE_RESULT",
+    `Forced result set for ${match.homeTeam} vs ${match.awayTeam}: ${result}. Reason: ${reason || "N/A"}. Match continues playing.`,
+    match.id,
+    "Match"
+  );
+
+  const updated = await Match.findById(req.params.id);
   res.json({
-    id: match.id,
-    homeTeam: match.homeTeam,
-    awayTeam: match.awayTeam,
-    homeScore: match.homeScore,
-    awayScore: match.awayScore,
-    status: match.status,
-    odds: match.odds,
-    minute: match.minute,
-    events: match.events,
-    scheduledAt: match.scheduledAt,
-    completedAt: match.completedAt,
-    result: match.result,
-    totalBets: match.totalBets,
-    totalBetAmount: match.totalBetAmount,
+    id: updated!.id,
+    homeTeam: updated!.homeTeam,
+    awayTeam: updated!.awayTeam,
+    homeScore: updated!.homeScore,
+    awayScore: updated!.awayScore,
+    status: updated!.status,
+    odds: updated!.odds,
+    minute: updated!.minute,
+    events: updated!.events,
+    scheduledAt: updated!.scheduledAt,
+    completedAt: updated!.completedAt,
+    result: updated!.result,
+    totalBets: updated!.totalBets,
+    totalBetAmount: updated!.totalBetAmount,
   });
 });
 

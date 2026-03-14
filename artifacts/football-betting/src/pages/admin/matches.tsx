@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { AdminLayout } from "@/components/layout/AdminLayout";
+import { API_BASE } from "@/lib/api";
 import { 
   useGetMatches, 
   useAdminCreateMatch, 
@@ -225,7 +226,7 @@ function ForceWinnerModal({ match, open, onOpenChange }: { match: MatchResponse;
   useEffect(() => {
     if (!open) return;
     const token = localStorage.getItem("goalbet_token");
-    fetch(`/api/admin/matches/${match.id}/bet-distribution`, {
+    fetch(`${API_BASE}/admin/matches/${match.id}/bet-distribution`, {
       headers: { Authorization: `Bearer ${token}` }
     }).then(r => r.ok ? r.json() : null).then(d => { if (d) setDist(d); });
   }, [open, match.id]);
@@ -235,9 +236,9 @@ function ForceWinnerModal({ match, open, onOpenChange }: { match: MatchResponse;
       <DialogContent className="border-border bg-card max-w-sm">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Trophy className="w-5 h-5 text-primary" /> Force Match Winner
+            <Trophy className="w-5 h-5 text-primary" /> Set Match Result
           </DialogTitle>
-          <DialogDescription>{match.homeTeam} vs {match.awayTeam}</DialogDescription>
+          <DialogDescription>{match.homeTeam} vs {match.awayTeam} — match continues, result locked at the end</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-5 py-2">
@@ -282,17 +283,17 @@ function ForceWinnerModal({ match, open, onOpenChange }: { match: MatchResponse;
             </div>
           </div>
 
-          <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-3 text-xs text-destructive">
-            This will immediately end the match and settle all bets according to the selected result.
+          <div className="bg-primary/10 border border-primary/30 rounded-lg p-3 text-xs text-primary">
+            The match continues playing normally. This result will be applied when the match ends.
           </div>
 
           <Button
-            className="w-full bg-destructive hover:bg-destructive/90 text-white font-bold"
+            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold"
             onClick={() => overrideMutation.mutate({ id: match.id, data: { result } })}
             disabled={overrideMutation.isPending}
           >
             {overrideMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-            Confirm & Settle Bets
+            Lock In Result
           </Button>
         </div>
       </DialogContent>

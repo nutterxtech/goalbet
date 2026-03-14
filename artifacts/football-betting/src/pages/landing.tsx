@@ -1,6 +1,6 @@
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Trophy, Zap, Shield, ChevronRight, Gift } from "lucide-react";
+import { Trophy, Zap, Shield, ChevronRight, Gift, RefreshCw, Activity } from "lucide-react";
 import { Navbar } from "@/components/layout/Navbar";
 
 export default function LandingPage() {
@@ -115,32 +115,151 @@ export default function LandingPage() {
             <p className="text-muted-foreground max-w-2xl mx-auto">A seamless betting experience designed for speed and excitement.</p>
           </div>
           
-          <div className="grid md:grid-cols-3 gap-8">
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
             {[
               {
                 icon: Trophy,
                 title: "1. Choose Your Match",
-                desc: "Browse our schedule of upcoming simulated matches featuring top European teams with algorithmically generated odds."
+                desc: "Browse live and upcoming simulated matches featuring top European teams with algorithmically generated odds."
               },
               {
                 icon: Zap,
                 title: "2. Fast-Paced Action",
-                desc: "Matches simulate 90 minutes of gameplay in just 120 seconds. Watch the timeline update live with goals and events."
+                desc: "Matches simulate 90 minutes of gameplay in just 120 seconds. Watch the live ticker update with goals and events."
               },
               {
                 icon: Shield,
                 title: "3. Instant Winnings",
-                desc: "Winnings are calculated instantly and credited to your account. Withdraw your funds securely at any time."
+                desc: "Winnings are calculated instantly and credited to your account. Withdraw your funds via M-Pesa at any time."
+              },
+              {
+                icon: RefreshCw,
+                title: "4. 50% Refund on Loss",
+                desc: "Lost your bet? We refund 50% of your stake straight back to your wallet — automatically, every single time."
               }
             ].map((feature, i) => (
-              <div key={i} className="bg-card border border-border/50 rounded-2xl p-8 hover:border-primary/50 transition-colors group">
-                <div className="w-14 h-14 bg-primary/10 text-primary rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+              <div key={i} className={`bg-card border rounded-2xl p-8 hover:border-primary/50 transition-colors group ${i === 3 ? "border-primary/30 bg-primary/5" : "border-border/50"}`}>
+                <div className={`w-14 h-14 rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform ${i === 3 ? "bg-primary/20 text-primary" : "bg-primary/10 text-primary"}`}>
                   <feature.icon className="h-7 w-7" />
                 </div>
                 <h3 className="text-xl font-bold mb-3">{feature.title}</h3>
                 <p className="text-muted-foreground leading-relaxed">{feature.desc}</p>
+                {i === 3 && <div className="mt-4 inline-flex items-center text-primary text-xs font-bold bg-primary/10 px-3 py-1 rounded-full">✓ Automatic — no claim needed</div>}
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Dashboard Preview Section */}
+      <section className="py-24 border-t border-border overflow-hidden relative">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(0,230,92,0.06)_0%,_transparent_60%)]" />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          <div className="text-center mb-16">
+            <div className="inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-sm font-medium text-primary mb-6">
+              <Activity className="mr-2 h-4 w-4" /> Live Dashboard
+            </div>
+            <h2 className="text-3xl md:text-5xl font-display font-bold mb-4">Everything at a glance</h2>
+            <p className="text-muted-foreground max-w-xl mx-auto">
+              Watch live matches tick in real time, build your accumulator slip, and track your winnings — all in one place.
+            </p>
+          </div>
+
+          {/* Mock Dashboard */}
+          <div className="relative max-w-5xl mx-auto">
+            <div className="absolute inset-0 bg-primary/10 blur-[80px] rounded-full scale-75" />
+            <div className="relative bg-card/80 backdrop-blur-xl border border-border/60 rounded-3xl overflow-hidden shadow-2xl">
+              {/* Top bar */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-border/60 bg-background/60">
+                <div className="flex items-center gap-3">
+                  <div className="w-3 h-3 rounded-full bg-destructive/60" />
+                  <div className="w-3 h-3 rounded-full bg-yellow-500/60" />
+                  <div className="w-3 h-3 rounded-full bg-primary/60" />
+                </div>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground bg-secondary/50 px-4 py-1.5 rounded-full border border-border/40">
+                  <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                  goalbet.app/dashboard
+                </div>
+                <div className="flex items-center gap-2 bg-primary/10 border border-primary/20 rounded-lg px-3 py-1.5">
+                  <span className="text-xs text-muted-foreground">Balance</span>
+                  <span className="text-xs font-display font-bold text-primary">KSh 1,240</span>
+                </div>
+              </div>
+
+              {/* Tab row */}
+              <div className="flex gap-2 px-6 py-3 border-b border-border/40 bg-background/40">
+                {["Live", "Upcoming", "Results"].map((tab, i) => (
+                  <div key={tab} className={`px-5 py-1.5 rounded-lg text-xs font-semibold transition-all ${i === 0 ? "bg-secondary text-white" : "text-muted-foreground"}`}>
+                    {tab}
+                    {i === 0 && <span className="ml-2 inline-flex items-center gap-1 text-destructive font-bold"><span className="w-1.5 h-1.5 rounded-full bg-destructive animate-pulse inline-block" />5</span>}
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid lg:grid-cols-[1fr_300px] divide-x divide-border/40">
+                {/* Match list */}
+                <div className="divide-y divide-border/30">
+                  {[
+                    { home: "Man City", away: "Arsenal", hs: 2, as: 1, min: 67, hodd: 1.45, dodd: 4.20, aodd: 6.50 },
+                    { home: "Real Madrid", away: "Barcelona", hs: 1, as: 1, min: 34, hodd: 2.10, dodd: 3.40, aodd: 3.20 },
+                    { home: "Liverpool", away: "Chelsea", hs: 0, as: 0, min: 12, hodd: 1.80, dodd: 3.60, aodd: 4.50 },
+                  ].map((m, i) => (
+                    <div key={i} className="px-6 py-4 flex items-center gap-4 hover:bg-secondary/20 transition-colors cursor-pointer">
+                      <div className="flex items-center gap-1 min-w-[52px]">
+                        <div className="w-1.5 h-1.5 rounded-full bg-destructive animate-pulse" />
+                        <span className="text-[10px] text-destructive font-bold">{m.min}'</span>
+                      </div>
+                      <div className="flex-1 flex items-center justify-between">
+                        <span className="text-sm font-semibold text-white">{m.home}</span>
+                        <span className="text-xl font-display font-black text-primary px-3">{m.hs} - {m.as}</span>
+                        <span className="text-sm font-semibold text-white">{m.away}</span>
+                      </div>
+                      <div className="flex gap-1.5">
+                        {[{ label: "1", odd: m.hodd }, { label: "X", odd: m.dodd }, { label: "2", odd: m.aodd }].map(o => (
+                          <div key={o.label} className={`flex flex-col items-center px-2.5 py-1.5 rounded-lg border text-[10px] cursor-pointer transition-all ${i === 0 && o.label === "1" ? "bg-primary/20 border-primary text-primary" : "border-border/50 bg-secondary/30 text-muted-foreground hover:border-primary/40"}`}>
+                            <span className="text-[9px] opacity-60">{o.label}</span>
+                            <span className="font-bold">{o.odd.toFixed(2)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Bet slip */}
+                <div className="p-5 bg-background/30">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-bold text-sm">Bet Slip</h3>
+                    <span className="text-xs text-primary bg-primary/10 px-2 py-0.5 rounded-full font-semibold">1 Selection</span>
+                  </div>
+                  <div className="bg-secondary/40 rounded-xl p-3 mb-3 border border-border/40">
+                    <p className="text-[10px] text-muted-foreground mb-1">Man City vs Arsenal</p>
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-bold text-white">Man City Win</span>
+                      <span className="text-xs font-display font-black text-primary">1.45×</span>
+                    </div>
+                  </div>
+                  <div className="space-y-2 mb-4">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">Stake</span>
+                      <span className="font-bold text-white">KSh 200</span>
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">Potential Win</span>
+                      <span className="font-display font-bold text-primary">KSh 290</span>
+                    </div>
+                    <div className="flex justify-between text-xs border-t border-border/40 pt-2">
+                      <span className="text-muted-foreground">If Lost (50% back)</span>
+                      <span className="font-bold text-yellow-400">KSh 100</span>
+                    </div>
+                  </div>
+                  <div className="w-full py-2.5 bg-primary text-primary-foreground text-xs font-bold rounded-xl text-center">
+                    Place Bet
+                  </div>
+                  <p className="text-center text-[10px] text-muted-foreground mt-3">Min bet KSh 5 · 50% refund guaranteed</p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -182,11 +301,12 @@ export default function LandingPage() {
       {/* Stats Section */}
       <section className="py-16 bg-card/50 border-t border-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid sm:grid-cols-3 gap-8 text-center">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-8 text-center">
             {[
               { value: "120s", label: "Match Duration" },
               { value: "KSh 5", label: "Min Bet" },
               { value: "KSh 20", label: "Min Deposit" },
+              { value: "50%", label: "Refund on Loss" },
             ].map((stat) => (
               <div key={stat.label}>
                 <div className="text-4xl md:text-5xl font-display font-black text-primary mb-2">{stat.value}</div>
