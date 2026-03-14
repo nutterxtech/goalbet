@@ -53,7 +53,7 @@ export default function AdminConfig() {
     { key: "minBet", label: "Minimum Bet (KSh)", desc: "Minimum amount users can bet" },
     { key: "maxBetAmount", label: "Maximum Bet (KSh)", desc: "Maximum amount per single bet" },
     { key: "minWithdrawal", label: "Minimum Withdrawal (KSh)", desc: "Minimum withdrawal amount" },
-    { key: "withdrawalFeePercent", label: "Withdrawal Fee (%)", desc: "Platform fee on withdrawals (currently 12%)" },
+    { key: "withdrawalFeePercent", label: "Withdrawal Fee (%)", desc: "Platform fee on withdrawals" },
     { key: "bettingWindowMinutes", label: "Betting Window (minutes)", desc: "How long betting is open before a match" },
     { key: "matchDurationSeconds", label: "Match Duration (seconds)", desc: "How many real seconds a 90-minute match takes" },
   ];

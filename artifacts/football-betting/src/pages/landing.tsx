@@ -186,7 +186,7 @@ export default function LandingPage() {
             {[
               { value: "120s", label: "Match Duration" },
               { value: "KSh 5", label: "Min Bet" },
-              { value: "12%", label: "Withdrawal Fee" },
+              { value: "KSh 20", label: "Min Deposit" },
             ].map((stat) => (
               <div key={stat.label}>
                 <div className="text-4xl md:text-5xl font-display font-black text-primary mb-2">{stat.value}</div>

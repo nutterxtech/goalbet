@@ -38,7 +38,7 @@ export default function AdminWithdrawals() {
                   <TableHead>Date</TableHead>
                   <TableHead>User</TableHead>
                   <TableHead>Amount</TableHead>
-                  <TableHead>Net (After 12% Fee)</TableHead>
+                  <TableHead>Net Amount</TableHead>
                   <TableHead>Details</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>

@@ -249,9 +249,9 @@ router.post("/matches/:id/start", async (req: AuthRequest, res) => {
     return;
   }
 
-  // If upcoming, open betting first then start simulation
+  // Start simulation — skip betting window since users can already bet on upcoming matches
   if (match.status === "upcoming" || match.status === "betting_open") {
-    await startMatchSimulation(match.id);
+    await startMatchSimulation(match.id, true);
     await logAction(req.user!.id, "START_MATCH", `Started match simulation: ${match.homeTeam} vs ${match.awayTeam}`, match.id, "Match");
   }
 

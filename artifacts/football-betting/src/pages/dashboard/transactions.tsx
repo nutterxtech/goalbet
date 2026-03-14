@@ -298,7 +298,7 @@ function WithdrawModal({ open, onOpenChange }: { open: boolean, onOpenChange: (o
       <DialogContent className="border-border bg-card">
         <DialogHeader>
           <DialogTitle>Request Withdrawal</DialogTitle>
-          <DialogDescription>Withdraw your winnings (Min KSh 50). A 12% platform fee applies.</DialogDescription>
+          <DialogDescription>Withdraw your winnings (Min KSh 50).</DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-4">
           <div className="space-y-2">
@@ -313,15 +313,7 @@ function WithdrawModal({ open, onOpenChange }: { open: boolean, onOpenChange: (o
           
           {numAmount >= 50 && (
             <div className="p-3 bg-secondary/50 rounded-lg text-sm border border-border/50">
-              <div className="flex justify-between text-muted-foreground mb-1">
-                <span>Requested Amount:</span>
-                <span>{formatCurrency(numAmount)}</span>
-              </div>
-              <div className="flex justify-between text-destructive mb-2">
-                <span>Platform Fee (12%):</span>
-                <span>-{formatCurrency(numAmount * 0.12)}</span>
-              </div>
-              <div className="flex justify-between font-bold text-white pt-2 border-t border-border">
+              <div className="flex justify-between font-bold text-white">
                 <span>You will receive:</span>
                 <span className="text-primary">{formatCurrency(netAmount)}</span>
               </div>

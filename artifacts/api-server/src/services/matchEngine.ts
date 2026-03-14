@@ -83,14 +83,14 @@ async function settleBets(match: IMatch) {
   }
 }
 
-export async function startMatchSimulation(matchId: string): Promise<void> {
+export async function startMatchSimulation(matchId: string, skipBettingWindow = false): Promise<void> {
   if (activeSimulations.has(matchId)) return;
 
   const config = await getConfig();
 
-  // First open betting window if not already open
+  // First open betting window if not already open and not skipping
   const matchBefore = await Match.findById(matchId);
-  if (matchBefore && matchBefore.status === "upcoming") {
+  if (matchBefore && matchBefore.status === "upcoming" && !skipBettingWindow) {
     const bettingCloseAt = new Date(Date.now() + config.bettingWindowMinutes * 60 * 1000);
     await Match.findByIdAndUpdate(matchId, {
       status: "betting_open",
@@ -284,6 +284,15 @@ export function startAutoScheduler(): void {
 
   async function runScheduler() {
     try {
+      // Backfill scheduledAt for existing upcoming matches that don't have one
+      const withoutSchedule = await Match.find({ status: "upcoming", scheduledAt: { $exists: false } });
+      for (let i = 0; i < withoutSchedule.length; i++) {
+        // Stagger them by 2 min each so they don't all start at once
+        await Match.findByIdAndUpdate(withoutSchedule[i]._id, {
+          scheduledAt: new Date(Date.now() + (i + 1) * 2 * 60 * 1000),
+        });
+      }
+
       // Check for upcoming matches that should have started by now
       const now = new Date();
       const scheduledMatches = await Match.find({
@@ -293,7 +302,8 @@ export function startAutoScheduler(): void {
 
       for (const match of scheduledMatches) {
         console.log(`Auto-starting scheduled match: ${match.homeTeam} vs ${match.awayTeam}`);
-        startMatchSimulation(match.id).catch(console.error);
+        // Skip betting window — users already placed bets while match was "upcoming"
+        startMatchSimulation(match.id, true).catch(console.error);
       }
 
       // Auto-generate new matches if there are fewer than 3 upcoming/betting_open matches
@@ -345,10 +355,10 @@ export function startAutoScheduler(): void {
     }
   }
 
-  // Run immediately then every 60 seconds
+  // Run immediately then every 30 seconds for timely match starts
   runScheduler();
-  autoSchedulerTimer = setInterval(runScheduler, 60 * 1000);
-  console.log("⏰ Match auto-scheduler started");
+  autoSchedulerTimer = setInterval(runScheduler, 30 * 1000);
+  console.log("⏰ Match auto-scheduler started (30s interval)");
 }
 
 export function stopAutoScheduler(): void {

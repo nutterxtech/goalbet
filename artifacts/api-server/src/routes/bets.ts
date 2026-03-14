@@ -42,13 +42,8 @@ router.post("/", async (req: AuthRequest, res) => {
       return;
     }
 
-    if (match.status !== "betting_open") {
-      res.status(400).json({ message: "Betting is not open for this match" });
-      return;
-    }
-
-    if (match.bettingClosesAt && new Date() > match.bettingClosesAt) {
-      res.status(400).json({ message: "Betting window has closed" });
+    if (!["betting_open", "upcoming"].includes(match.status)) {
+      res.status(400).json({ message: "Betting is not available for this match" });
       return;
     }
 

@@ -17,29 +17,31 @@ import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency, formatRelativeTime, formatDate } from "@/lib/format";
 import { useQueryClient } from "@tanstack/react-query";
 
-function Countdown({ targetDate }: { targetDate: string }) {
+function Countdown({ targetDate, label = "" }: { targetDate: string; label?: string }) {
   const [timeLeft, setTimeLeft] = useState<string>("");
 
   useEffect(() => {
-    const timer = setInterval(() => {
+    function tick() {
       const target = new Date(targetDate).getTime();
       const now = new Date().getTime();
       const difference = target - now;
 
       if (difference <= 0) {
-        setTimeLeft("Closed");
-        clearInterval(timer);
+        setTimeLeft("Starting...");
       } else {
+        const h = Math.floor(difference / (1000 * 60 * 60));
         const m = Math.floor((difference % (1000 * 60 * 60)) / (1000 * 60));
         const s = Math.floor((difference % (1000 * 60)) / 1000);
-        setTimeLeft(`${m}m ${s}s`);
+        if (h > 0) setTimeLeft(`${h}h ${m}m`);
+        else setTimeLeft(`${m}m ${s}s`);
       }
-    }, 1000);
-
+    }
+    tick();
+    const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
   }, [targetDate]);
 
-  return <span className="font-mono">{timeLeft}</span>;
+  return <span className="font-mono">{label}{timeLeft}</span>;
 }
 
 export default function MatchesPage() {
@@ -116,10 +118,17 @@ function MatchCard({ match }: { match: MatchResponse }) {
               </Badge>
             ) : isCompleted ? (
               <Badge variant="secondary">FT</Badge>
-            ) : (
+            ) : match.status === 'upcoming' ? (
               <Badge variant="outline" className="border-primary/50 text-primary bg-primary/5">
                 <Clock className="w-3 h-3 mr-1" />
-                {match.bettingClosesAt ? <Countdown targetDate={match.bettingClosesAt} /> : 'Upcoming'}
+                {match.scheduledAt
+                  ? <Countdown targetDate={match.scheduledAt} label="Starts in " />
+                  : 'Upcoming'}
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="border-yellow-500/50 text-yellow-400 bg-yellow-500/5">
+                <Clock className="w-3 h-3 mr-1" />
+                Betting: <Countdown targetDate={match.bettingClosesAt!} />
               </Badge>
             )}
             <span className="text-xs text-muted-foreground font-medium">
