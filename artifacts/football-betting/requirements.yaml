@@ -1,0 +1,19 @@
+packages:
+  "framer-motion": "For page transitions, list animations, and pulsing live indicators"
+  "recharts": "For admin dashboard statistics and revenue charts"
+  "date-fns": "For readable countdown timers and timestamp formatting"
+  "react-hook-form": "For robust form state management"
+  "@hookform/resolvers": "Zod validation for forms"
+  "zod": "Schema validation for forms"
+
+images:
+  - path: "artifacts/football-betting/public/images/hero-bg.png"
+    description: "Abstract dramatic stadium lighting at night, deep dark navy and electric neon green accents, sleek and modern, depth of field"
+    aspect_ratio: "16:9"
+  - path: "artifacts/football-betting/public/images/logo.png"
+    description: "Minimalist bold logo mark for GoalBet, combining a football hexagon and a rising chart arrow, electric green and white on transparent background"
+    aspect_ratio: "1:1"
+
+notes:
+  - "The app uses JWT authentication. A fetch interceptor is implemented to inject the token from localStorage into all /api requests."
+  - "Polling is used for live matches and notifications (every 3 seconds) since there is no WebSocket."

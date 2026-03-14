@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "GoalBet - Virtual Football Betting"
+version = "1.0.0"
+id = "artifacts/football-betting"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+localPort = 24585
+name = "web"
+paths = ["/"]
+
+[services.development]
+run = "pnpm --filter @workspace/football-betting run dev"
+
+[services.env]
+PORT = "24585"
+BASE_PATH = "/"
+
+[services.production]
+build = ["pnpm", "--filter", "@workspace/football-betting", "run", "build"]
+publicDir = "artifacts/football-betting/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"

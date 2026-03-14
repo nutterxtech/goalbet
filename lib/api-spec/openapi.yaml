@@ -1,22 +1,36 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
-  version: 0.1.0
-  description: API specification
+  version: 1.0.0
+  description: GoalBet Virtual Football Betting Platform API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication operations
+  - name: user
+    description: User operations
+  - name: matches
+    description: Match operations
+  - name: bets
+    description: Betting operations
+  - name: transactions
+    description: Transaction operations
+  - name: admin
+    description: Admin operations
+  - name: leaderboard
+    description: Leaderboard operations
+  - name: notifications
+    description: Notifications
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,13 +38,1233 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: User registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get current user
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+
+  /user/balance:
+    get:
+      operationId: getBalance
+      tags: [user]
+      summary: Get user balance
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Balance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BalanceResponse"
+
+  /user/deposit:
+    post:
+      operationId: deposit
+      tags: [user]
+      summary: Deposit funds
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DepositRequest"
+      responses:
+        "200":
+          description: Deposit successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransactionResponse"
+
+  /user/withdraw:
+    post:
+      operationId: withdraw
+      tags: [user]
+      summary: Request withdrawal
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WithdrawRequest"
+      responses:
+        "200":
+          description: Withdrawal requested
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransactionResponse"
+
+  /user/transactions:
+    get:
+      operationId: getTransactions
+      tags: [user]
+      summary: Get transaction history
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: number
+        - name: limit
+          in: query
+          schema:
+            type: number
+      responses:
+        "200":
+          description: Transactions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransactionListResponse"
+
+  /user/bets:
+    get:
+      operationId: getUserBets
+      tags: [user]
+      summary: Get user bet history
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: number
+        - name: limit
+          in: query
+          schema:
+            type: number
+      responses:
+        "200":
+          description: Bet history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BetListResponse"
+
+  /user/notifications:
+    get:
+      operationId: getNotifications
+      tags: [notifications]
+      summary: Get user notifications
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Notifications
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationListResponse"
+
+  /user/notifications/read:
+    post:
+      operationId: markNotificationsRead
+      tags: [notifications]
+      summary: Mark all notifications as read
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Marked as read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /matches:
+    get:
+      operationId: getMatches
+      tags: [matches]
+      summary: Get matches
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [upcoming, live, completed]
+      responses:
+        "200":
+          description: Matches
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MatchListResponse"
+
+  /matches/{id}:
+    get:
+      operationId: getMatch
+      tags: [matches]
+      summary: Get match by ID
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Match
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MatchResponse"
+
+  /bets:
+    post:
+      operationId: placeBet
+      tags: [bets]
+      summary: Place a bet
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlaceBetRequest"
+      responses:
+        "201":
+          description: Bet placed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BetResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /leaderboard:
+    get:
+      operationId: getLeaderboard
+      tags: [leaderboard]
+      summary: Get leaderboard
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Leaderboard
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeaderboardResponse"
+
+  /admin/users:
+    get:
+      operationId: adminGetUsers
+      tags: [admin]
+      summary: Get all users
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: number
+        - name: limit
+          in: query
+          schema:
+            type: number
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Users list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUserListResponse"
+
+  /admin/users/{id}:
+    get:
+      operationId: adminGetUser
+      tags: [admin]
+      summary: Get user by ID
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUserResponse"
+
+  /admin/users/{id}/status:
+    put:
+      operationId: adminUpdateUserStatus
+      tags: [admin]
+      summary: Ban or suspend user
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserStatusRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /admin/users/{id}/balance:
+    put:
+      operationId: adminAdjustBalance
+      tags: [admin]
+      summary: Adjust user balance
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdjustBalanceRequest"
+      responses:
+        "200":
+          description: Balance adjusted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /admin/matches:
+    post:
+      operationId: adminCreateMatch
+      tags: [admin]
+      summary: Create a match
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMatchRequest"
+      responses:
+        "201":
+          description: Match created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MatchResponse"
+
+  /admin/matches/{id}/start:
+    post:
+      operationId: adminStartMatch
+      tags: [admin]
+      summary: Start match simulation
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Match started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MatchResponse"
+
+  /admin/matches/{id}/stop:
+    post:
+      operationId: adminStopMatch
+      tags: [admin]
+      summary: Stop match simulation
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Match stopped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MatchResponse"
+
+  /admin/matches/{id}/odds:
+    put:
+      operationId: adminUpdateOdds
+      tags: [admin]
+      summary: Update match odds
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateOddsRequest"
+      responses:
+        "200":
+          description: Odds updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MatchResponse"
+
+  /admin/matches/{id}/override:
+    post:
+      operationId: adminOverrideResult
+      tags: [admin]
+      summary: Manually override match result
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OverrideResultRequest"
+      responses:
+        "200":
+          description: Result overridden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MatchResponse"
+
+  /admin/withdrawals:
+    get:
+      operationId: adminGetWithdrawals
+      tags: [admin]
+      summary: Get all withdrawal requests
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, approved, rejected]
+      responses:
+        "200":
+          description: Withdrawals
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransactionListResponse"
+
+  /admin/withdrawals/{id}:
+    put:
+      operationId: adminProcessWithdrawal
+      tags: [admin]
+      summary: Approve or reject withdrawal
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProcessWithdrawalRequest"
+      responses:
+        "200":
+          description: Processed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /admin/stats:
+    get:
+      operationId: adminGetStats
+      tags: [admin]
+      summary: Get platform statistics
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminStatsResponse"
+
+  /admin/bets:
+    get:
+      operationId: adminGetBets
+      tags: [admin]
+      summary: Get all bets
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: number
+        - name: limit
+          in: query
+          schema:
+            type: number
+        - name: matchId
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Bets
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BetListResponse"
+
+  /admin/logs:
+    get:
+      operationId: adminGetLogs
+      tags: [admin]
+      summary: Get activity logs
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: number
+        - name: limit
+          in: query
+          schema:
+            type: number
+      responses:
+        "200":
+          description: Logs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogListResponse"
+
+  /admin/config:
+    get:
+      operationId: adminGetConfig
+      tags: [admin]
+      summary: Get platform configuration
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformConfig"
+    put:
+      operationId: adminUpdateConfig
+      tags: [admin]
+      summary: Update platform configuration
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlatformConfig"
+      responses:
+        "200":
+          description: Config updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformConfig"
+
+  /admin/deposits:
+    get:
+      operationId: adminGetDeposits
+      tags: [admin]
+      summary: Get all deposits
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: number
+        - name: limit
+          in: query
+          schema:
+            type: number
+      responses:
+        "200":
+          description: Deposits
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransactionListResponse"
+
 components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
   schemas:
     HealthStatus:
       type: object
       properties:
         status:
           type: string
-      required:
-        - status
+      required: [status]
 
+    ErrorResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        error:
+          type: string
+      required: [message]
+
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+      required: [success, message]
+
+    RegisterRequest:
+      type: object
+      properties:
+        username:
+          type: string
+        email:
+          type: string
+        password:
+          type: string
+        phone:
+          type: string
+      required: [username, email, password]
+
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+      required: [email, password]
+
+    AuthResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        user:
+          $ref: "#/components/schemas/UserProfile"
+      required: [token, user]
+
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        balance:
+          type: number
+        role:
+          type: string
+          enum: [user, admin]
+        status:
+          type: string
+          enum: [active, suspended, banned]
+        totalBets:
+          type: number
+        totalWins:
+          type: number
+        totalWinnings:
+          type: number
+        createdAt:
+          type: string
+      required: [id, username, email, balance, role, status]
+
+    BalanceResponse:
+      type: object
+      properties:
+        balance:
+          type: number
+      required: [balance]
+
+    DepositRequest:
+      type: object
+      properties:
+        amount:
+          type: number
+        method:
+          type: string
+      required: [amount]
+
+    WithdrawRequest:
+      type: object
+      properties:
+        amount:
+          type: number
+        accountDetails:
+          type: string
+      required: [amount, accountDetails]
+
+    TransactionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [deposit, withdrawal, bet, winnings, refund, adjustment]
+        amount:
+          type: number
+        fee:
+          type: number
+        netAmount:
+          type: number
+        status:
+          type: string
+          enum: [pending, completed, rejected]
+        description:
+          type: string
+        createdAt:
+          type: string
+        userId:
+          type: string
+        username:
+          type: string
+      required: [id, type, amount, status, createdAt]
+
+    TransactionListResponse:
+      type: object
+      properties:
+        transactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/TransactionResponse"
+        total:
+          type: number
+        page:
+          type: number
+        totalPages:
+          type: number
+      required: [transactions, total]
+
+    OddsObject:
+      type: object
+      properties:
+        home:
+          type: number
+        draw:
+          type: number
+        away:
+          type: number
+      required: [home, draw, away]
+
+    MatchEvent:
+      type: object
+      properties:
+        minute:
+          type: number
+        type:
+          type: string
+        team:
+          type: string
+        player:
+          type: string
+        description:
+          type: string
+      required: [minute, type, team]
+
+    MatchResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        homeTeam:
+          type: string
+        awayTeam:
+          type: string
+        homeScore:
+          type: number
+        awayScore:
+          type: number
+        status:
+          type: string
+          enum: [upcoming, betting_open, live, completed, cancelled]
+        odds:
+          $ref: "#/components/schemas/OddsObject"
+        minute:
+          type: number
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/MatchEvent"
+        scheduledAt:
+          type: string
+        bettingClosesAt:
+          type: string
+        startedAt:
+          type: string
+        completedAt:
+          type: string
+        result:
+          type: string
+          enum: [home, draw, away]
+        totalBets:
+          type: number
+        totalBetAmount:
+          type: number
+      required: [id, homeTeam, awayTeam, homeScore, awayScore, status, odds]
+
+    MatchListResponse:
+      type: object
+      properties:
+        matches:
+          type: array
+          items:
+            $ref: "#/components/schemas/MatchResponse"
+        total:
+          type: number
+      required: [matches, total]
+
+    PlaceBetRequest:
+      type: object
+      properties:
+        matchId:
+          type: string
+        outcome:
+          type: string
+          enum: [home, draw, away]
+        amount:
+          type: number
+      required: [matchId, outcome, amount]
+
+    BetResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        matchId:
+          type: string
+        userId:
+          type: string
+        username:
+          type: string
+        homeTeam:
+          type: string
+        awayTeam:
+          type: string
+        outcome:
+          type: string
+          enum: [home, draw, away]
+        amount:
+          type: number
+        odds:
+          type: number
+        potentialWinnings:
+          type: number
+        status:
+          type: string
+          enum: [pending, won, lost, refunded]
+        actualWinnings:
+          type: number
+        createdAt:
+          type: string
+        settledAt:
+          type: string
+      required: [id, matchId, userId, outcome, amount, odds, potentialWinnings, status, createdAt]
+
+    BetListResponse:
+      type: object
+      properties:
+        bets:
+          type: array
+          items:
+            $ref: "#/components/schemas/BetResponse"
+        total:
+          type: number
+        page:
+          type: number
+        totalPages:
+          type: number
+      required: [bets, total]
+
+    LeaderboardEntry:
+      type: object
+      properties:
+        rank:
+          type: number
+        userId:
+          type: string
+        username:
+          type: string
+        totalWinnings:
+          type: number
+        totalBets:
+          type: number
+        winRate:
+          type: number
+      required: [rank, userId, username, totalWinnings, totalBets, winRate]
+
+    LeaderboardResponse:
+      type: object
+      properties:
+        leaderboard:
+          type: array
+          items:
+            $ref: "#/components/schemas/LeaderboardEntry"
+        userRank:
+          $ref: "#/components/schemas/LeaderboardEntry"
+      required: [leaderboard]
+
+    NotificationResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        message:
+          type: string
+        read:
+          type: boolean
+        createdAt:
+          type: string
+        data:
+          type: object
+      required: [id, type, message, read, createdAt]
+
+    NotificationListResponse:
+      type: object
+      properties:
+        notifications:
+          type: array
+          items:
+            $ref: "#/components/schemas/NotificationResponse"
+        unreadCount:
+          type: number
+      required: [notifications, unreadCount]
+
+    AdminUserResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        balance:
+          type: number
+        role:
+          type: string
+        status:
+          type: string
+        totalBets:
+          type: number
+        totalWins:
+          type: number
+        totalWinnings:
+          type: number
+        totalDeposits:
+          type: number
+        totalWithdrawals:
+          type: number
+        createdAt:
+          type: string
+      required: [id, username, email, balance, role, status]
+
+    AdminUserListResponse:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminUserResponse"
+        total:
+          type: number
+        page:
+          type: number
+        totalPages:
+          type: number
+      required: [users, total]
+
+    UpdateUserStatusRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [active, suspended, banned]
+        reason:
+          type: string
+      required: [status]
+
+    AdjustBalanceRequest:
+      type: object
+      properties:
+        amount:
+          type: number
+        reason:
+          type: string
+      required: [amount, reason]
+
+    CreateMatchRequest:
+      type: object
+      properties:
+        homeTeam:
+          type: string
+        awayTeam:
+          type: string
+        odds:
+          $ref: "#/components/schemas/OddsObject"
+        scheduledAt:
+          type: string
+        bettingWindowMinutes:
+          type: number
+      required: [homeTeam, awayTeam, odds]
+
+    UpdateOddsRequest:
+      type: object
+      properties:
+        odds:
+          $ref: "#/components/schemas/OddsObject"
+      required: [odds]
+
+    OverrideResultRequest:
+      type: object
+      properties:
+        result:
+          type: string
+          enum: [home, draw, away]
+        homeScore:
+          type: number
+        awayScore:
+          type: number
+        reason:
+          type: string
+      required: [result]
+
+    ProcessWithdrawalRequest:
+      type: object
+      properties:
+        action:
+          type: string
+          enum: [approve, reject]
+        reason:
+          type: string
+      required: [action]
+
+    AdminStatsResponse:
+      type: object
+      properties:
+        totalUsers:
+          type: number
+        activeUsers:
+          type: number
+        totalMatches:
+          type: number
+        liveMatches:
+          type: number
+        totalBets:
+          type: number
+        totalBetAmount:
+          type: number
+        totalDeposits:
+          type: number
+        totalWithdrawals:
+          type: number
+        pendingWithdrawals:
+          type: number
+        platformRevenue:
+          type: number
+        totalWinningsPaid:
+          type: number
+        recentBets:
+          type: array
+          items:
+            $ref: "#/components/schemas/BetResponse"
+      required: [totalUsers, totalMatches, totalBets, platformRevenue]
+
+    LogEntry:
+      type: object
+      properties:
+        id:
+          type: string
+        action:
+          type: string
+        adminId:
+          type: string
+        adminUsername:
+          type: string
+        targetId:
+          type: string
+        targetType:
+          type: string
+        description:
+          type: string
+        createdAt:
+          type: string
+      required: [id, action, description, createdAt]
+
+    LogListResponse:
+      type: object
+      properties:
+        logs:
+          type: array
+          items:
+            $ref: "#/components/schemas/LogEntry"
+        total:
+          type: number
+        page:
+          type: number
+        totalPages:
+          type: number
+      required: [logs, total]
+
+    PlatformConfig:
+      type: object
+      properties:
+        minDeposit:
+          type: number
+        minBet:
+          type: number
+        minWithdrawal:
+          type: number
+        withdrawalFeePercent:
+          type: number
+        bettingWindowMinutes:
+          type: number
+        matchDurationSeconds:
+          type: number
+        maxBetAmount:
+          type: number
+      required: [minDeposit, minBet, minWithdrawal, withdrawalFeePercent, bettingWindowMinutes, matchDurationSeconds]
