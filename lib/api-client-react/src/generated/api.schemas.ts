@@ -494,6 +494,7 @@ export type GetUserBetsParams = {
 
 export type GetMatchesParams = {
   status?: GetMatchesStatus;
+  limit?: number;
 };
 
 export type GetMatchesStatus =
