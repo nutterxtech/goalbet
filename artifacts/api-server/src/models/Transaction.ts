@@ -6,11 +6,15 @@ export interface ITransaction extends Document {
   amount: number;
   fee: number;
   netAmount: number;
-  status: "pending" | "completed" | "rejected";
+  status: "pending" | "completed" | "rejected" | "failed";
   description: string;
   accountDetails?: string;
   processedBy?: mongoose.Types.ObjectId;
   processedAt?: Date;
+  mpesaCheckoutRequestId?: string;
+  mpesaMerchantRequestId?: string;
+  mpesaReceiptNumber?: string;
+  mpesaPhone?: string;
   createdAt: Date;
 }
 
@@ -25,16 +29,21 @@ const TransactionSchema = new Schema<ITransaction>(
     amount: { type: Number, required: true },
     fee: { type: Number, default: 0 },
     netAmount: { type: Number, required: true },
-    status: { type: String, enum: ["pending", "completed", "rejected"], default: "pending" },
+    status: { type: String, enum: ["pending", "completed", "rejected", "failed"], default: "pending" },
     description: { type: String, required: true },
     accountDetails: String,
     processedBy: { type: Schema.Types.ObjectId, ref: "User" },
     processedAt: Date,
+    mpesaCheckoutRequestId: String,
+    mpesaMerchantRequestId: String,
+    mpesaReceiptNumber: String,
+    mpesaPhone: String,
   },
   { timestamps: true }
 );
 
 TransactionSchema.index({ userId: 1, createdAt: -1 });
 TransactionSchema.index({ type: 1, status: 1 });
+TransactionSchema.index({ mpesaCheckoutRequestId: 1 }, { sparse: true });
 
 export const Transaction = mongoose.model<ITransaction>("Transaction", TransactionSchema);

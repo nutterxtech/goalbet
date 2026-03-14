@@ -105,8 +105,10 @@ workspace/
   - No team can be in two active matches simultaneously (same-team conflict check)
   - After betting window closes, 90-minute simulation runs in `matchDurationSeconds` (default: 120 sec)
   - Slips are settled automatically when each match in the slip completes (accumulator logic)
-- **Auto-balance**: If platform would pay out more than collected, engine overrides result to minimum-payout outcome
+- **Auto-balance**: If platform would pay out more than collected, engine overrides both result AND score (so display is always consistent — e.g. if overriding to draw, equalises scores)
+- **Halftime pause**: Simulation pauses at 45' (ticker holds at HT) for ~5–6 seconds before second half
 - **Leaderboard**: Only shows users with totalWins > 0
+- **M-Pesa Daraja API**: Real STK push on deposit; real B2C payout on admin withdrawal approval. Credentials stored in PlatformConfig (admin settings). When not configured, endpoint returns graceful error
 
 ## Admin User
 

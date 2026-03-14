@@ -92,14 +92,7 @@ export default function MatchesPage() {
     setSlip((prev) => prev.filter((s) => s.matchId !== matchId));
   }, []);
 
-  const completedMatches = activeTab === "completed" && isAuthenticated
-    ? (data?.matches ?? []).filter((m) => {
-        const slip = userSlipsData?.slips?.find((s) =>
-          s.selections.some((sel) => sel.matchId === m.id)
-        );
-        return !!slip;
-      })
-    : (data?.matches ?? []);
+  const completedMatches = data?.matches ?? [];
 
   const isEmpty = !isLoading && completedMatches.length === 0;
   const combinedOdds = slip.reduce((acc, s) => acc * s.odds, 1);
@@ -146,8 +139,8 @@ export default function MatchesPage() {
             <div className="flex flex-col items-center justify-center h-64 bg-card/50 border border-dashed border-border rounded-2xl">
               <Clock className="w-12 h-12 text-muted-foreground/50 mb-4" />
               <p className="text-lg font-medium text-muted-foreground">
-                {activeTab === "completed" && isAuthenticated
-                  ? "No results for your slips yet."
+                {activeTab === "completed"
+                  ? "No completed matches yet."
                   : `No ${activeTab} matches found.`}
               </p>
             </div>

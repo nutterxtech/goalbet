@@ -7,6 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Shield, Loader2, Eye, EyeOff } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { useLocation } from "wouter";
+import { useQueryClient } from "@tanstack/react-query";
+import { getGetMeQueryKey } from "@workspace/api-client-react";
 
 export default function AdminSecretLogin() {
   const [adminKey, setAdminKey] = useState("");
@@ -16,6 +18,7 @@ export default function AdminSecretLogin() {
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -34,10 +37,11 @@ export default function AdminSecretLogin() {
       if (!res.ok) throw new Error(data.message || "Authentication failed");
 
       localStorage.setItem("goalbet_token", data.token);
-      // Mark that admin accessed via the secret URL
       sessionStorage.setItem("goalbet_admin_unlocked", "1");
-      toast({ title: "Admin access granted", description: `Welcome, ${data.user.username}` });
-      setTimeout(() => setLocation("/admin"), 500);
+      // Seed the React Query cache with the user so AdminLayout sees isAdmin immediately
+      queryClient.setQueryData(getGetMeQueryKey(), data.user);
+      toast({ title: "Access granted", description: `Welcome, ${data.user.username}` });
+      setLocation("/admin");
     } catch (err: any) {
       toast({ title: "Access denied", description: err.message, variant: "destructive" });
     } finally {

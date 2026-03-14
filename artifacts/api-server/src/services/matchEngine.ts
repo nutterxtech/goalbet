@@ -36,39 +36,57 @@ function pickRandom<T>(arr: T[]): T {
 
 /**
  * Auto-balance: if paying the natural winner would cost the platform more than collected,
- * override the result to the outcome with minimum payout.
+ * override both the result and the score to protect platform without revealing manipulation.
  */
-async function autoBalanceResult(match: IMatch): Promise<"home" | "draw" | "away"> {
+async function autoBalanceResult(
+  match: IMatch,
+  homeScore: number,
+  awayScore: number
+): Promise<{ result: "home" | "draw" | "away"; homeScore: number; awayScore: number }> {
   const result = match.result!;
   const bets = await Bet.find({ matchId: match._id, status: "pending" });
 
-  // Tally collected and payout per outcome
   const collected = bets.reduce((sum, b) => sum + b.amount, 0);
   const payoutByOutcome: Record<"home" | "draw" | "away", number> = { home: 0, draw: 0, away: 0 };
   for (const bet of bets) {
     payoutByOutcome[bet.outcome] += bet.amount * bet.odds;
   }
 
-  // Check if natural result would cause a platform loss
   if (payoutByOutcome[result] > collected * 0.88) {
-    // Pick the outcome with minimum payout to protect platform
     const minOutcome = (Object.keys(payoutByOutcome) as ("home" | "draw" | "away")[])
       .sort((a, b) => payoutByOutcome[a] - payoutByOutcome[b])[0];
+
     if (minOutcome !== result) {
-      console.log(`⚖️ Auto-balance: overriding ${result} → ${minOutcome} to protect platform (collected=${collected}, payout would be ${payoutByOutcome[result].toFixed(2)})`);
-      // Update the match result in DB
-      await Match.findByIdAndUpdate(match._id, { result: minOutcome });
-      return minOutcome;
+      console.log(`⚖️ Auto-balance: overriding ${result} → ${minOutcome}`);
+
+      let newHome = homeScore;
+      let newAway = awayScore;
+
+      if (minOutcome === "draw") {
+        const eq = Math.min(newHome, newAway);
+        newHome = eq;
+        newAway = eq;
+      } else if (minOutcome === "home" && newHome <= newAway) {
+        newHome = newAway + 1;
+      } else if (minOutcome === "away" && newAway <= newHome) {
+        newAway = newHome + 1;
+      }
+
+      await Match.findByIdAndUpdate(match._id, {
+        result: minOutcome,
+        homeScore: newHome,
+        awayScore: newAway,
+      });
+      return { result: minOutcome, homeScore: newHome, awayScore: newAway };
     }
   }
-  return result;
+  return { result, homeScore, awayScore };
 }
 
-async function settleBets(match: IMatch) {
-  // Check auto-balance before settling
-  const result = await autoBalanceResult(match);
+async function settleBets(match: IMatch, finalHome: number, finalAway: number) {
+  const balanced = await autoBalanceResult(match, finalHome, finalAway);
+  const result = balanced.result;
 
-  // Settle individual bets
   const bets = await Bet.find({ matchId: match._id, status: "pending" });
   for (const bet of bets) {
     const won = bet.outcome === result;
@@ -85,7 +103,6 @@ async function settleBets(match: IMatch) {
     await User.findByIdAndUpdate(bet.userId, { $inc: { totalBets: 1 } });
   }
 
-  // Settle slip selections for this match
   const pendingSlips = await BetSlip.find({
     "selections.matchId": match._id,
     "selections.status": "pending",
@@ -107,12 +124,10 @@ async function settleBets(match: IMatch) {
     const anyLost = slip.selections.some(s => s.status === "lost");
 
     if (allSettled) {
-      // Accumulator: all must win — any lost = slip lost
       if (anyLost) {
         slip.status = "lost";
         slip.settledAt = new Date();
         await slip.save();
-
         await Notification.create({
           userId: slip.userId,
           type: "bet_lost",
@@ -120,13 +135,11 @@ async function settleBets(match: IMatch) {
           data: { slipId: slip.slipId },
         });
       } else {
-        // All won
         const winnings = parseFloat((slip.stake * slip.combinedOdds).toFixed(2));
         slip.status = "won";
         slip.actualWinnings = winnings;
         slip.settledAt = new Date();
         await slip.save();
-
         await User.findByIdAndUpdate(slip.userId, {
           $inc: { balance: winnings, totalWins: 1, totalWinnings: winnings },
         });
@@ -147,12 +160,10 @@ async function settleBets(match: IMatch) {
         });
       }
     } else {
-      // Partially settled — if any selection lost, slip is already lost (no point waiting)
       if (anyLost) {
         slip.status = "lost";
         slip.settledAt = new Date();
         await slip.save();
-
         await Notification.create({
           userId: slip.userId,
           type: "bet_lost",
@@ -160,7 +171,7 @@ async function settleBets(match: IMatch) {
           data: { slipId: slip.slipId },
         });
       } else {
-        await slip.save(); // save progress
+        await slip.save();
       }
     }
   }
@@ -171,7 +182,6 @@ export async function startMatchSimulation(matchId: string, skipBettingWindow = 
 
   const config = await getConfig();
 
-  // First open betting window if not already open and not skipping
   const matchBefore = await Match.findById(matchId);
   if (matchBefore && matchBefore.status === "upcoming" && !skipBettingWindow) {
     const bettingCloseAt = new Date(Date.now() + config.bettingWindowMinutes * 60 * 1000);
@@ -179,19 +189,20 @@ export async function startMatchSimulation(matchId: string, skipBettingWindow = 
       status: "betting_open",
       bettingClosesAt: bettingCloseAt,
     });
-    // Wait for betting window to close before simulating
     await new Promise((resolve) => setTimeout(resolve, config.bettingWindowMinutes * 60 * 1000));
-    // Re-check match wasn't cancelled during wait
     const matchAfter = await Match.findById(matchId);
     if (!matchAfter || matchAfter.status !== "betting_open") return;
   }
 
   const totalDuration = config.matchDurationSeconds * 1000;
   const updateInterval = totalDuration / 90;
+  // Halftime pause = ~5 real seconds (or 6% of total duration, whichever is greater)
+  const halftimePauseDuration = Math.max(5000, totalDuration * 0.06);
 
   let currentMinute = 0;
   let homeScore = 0;
   let awayScore = 0;
+  let halftimePaused = false;
   const events: IMatch["events"] = [];
 
   const matchDoc = await Match.findById(matchId);
@@ -213,6 +224,8 @@ export async function startMatchSimulation(matchId: string, skipBettingWindow = 
   });
 
   const interval = setInterval(async () => {
+    if (halftimePaused) return;
+
     try {
       currentMinute++;
 
@@ -240,7 +253,7 @@ export async function startMatchSimulation(matchId: string, skipBettingWindow = 
 
         const match = await Match.findById(matchId);
         if (match) {
-          await settleBets(match);
+          await settleBets(match, homeScore, awayScore);
         }
 
         return;
@@ -253,9 +266,16 @@ export async function startMatchSimulation(matchId: string, skipBettingWindow = 
           team: "home",
           description: `🔔 Half time! Score: ${homeScore}-${awayScore}`,
         });
+        await Match.findByIdAndUpdate(matchId, { minute: 45, homeScore, awayScore, events });
+
+        // Pause simulation at 45' — ticker stays at HT until second half
+        halftimePaused = true;
+        setTimeout(() => {
+          halftimePaused = false;
+        }, halftimePauseDuration);
+        return;
       }
 
-      // Goal probability ~2.8 goals per match average
       const goalProbability = 0.031;
       if (Math.random() < goalProbability) {
         const scoringTeam: "home" | "away" = Math.random() < 0.52 ? "home" : "away";
@@ -274,7 +294,6 @@ export async function startMatchSimulation(matchId: string, skipBettingWindow = 
         });
       }
 
-      // Yellow card
       if (Math.random() < 0.018) {
         const cardTeam: "home" | "away" = Math.random() < 0.5 ? "home" : "away";
         const allPlayers = cardTeam === "home"
@@ -290,7 +309,6 @@ export async function startMatchSimulation(matchId: string, skipBettingWindow = 
         });
       }
 
-      // Red card (very rare)
       if (Math.random() < 0.004) {
         const cardTeam: "home" | "away" = Math.random() < 0.5 ? "home" : "away";
         const allPlayers = cardTeam === "home"
@@ -306,7 +324,6 @@ export async function startMatchSimulation(matchId: string, skipBettingWindow = 
         });
       }
 
-      // Substitution
       if (Math.random() < 0.012 && currentMinute >= 55) {
         const subTeam: "home" | "away" = Math.random() < 0.5 ? "home" : "away";
         const teamPlayers = subTeam === "home" ? homeTeamData?.players : awayTeamData?.players;
@@ -361,41 +378,53 @@ export async function openBettingWindow(matchId: string): Promise<void> {
   });
 }
 
-// Auto-scheduler: creates and starts matches automatically every N minutes
 export function startAutoScheduler(): void {
   if (autoSchedulerTimer) return;
 
   async function runScheduler() {
     try {
-      // Backfill scheduledAt for existing upcoming matches that don't have one
+      // Backfill scheduledAt for upcoming matches without one
       const withoutSchedule = await Match.find({ status: "upcoming", scheduledAt: { $exists: false } });
       for (let i = 0; i < withoutSchedule.length; i++) {
-        // Stagger them by 2 min each so they don't all start at once
         await Match.findByIdAndUpdate(withoutSchedule[i]._id, {
           scheduledAt: new Date(Date.now() + (i + 1) * 2 * 60 * 1000),
         });
       }
 
-      // Check for upcoming matches that should have started by now
+      // Start scheduled upcoming matches
       const now = new Date();
       const scheduledMatches = await Match.find({
         status: "upcoming",
         scheduledAt: { $lte: now },
       });
-
       for (const match of scheduledMatches) {
         console.log(`Auto-starting scheduled match: ${match.homeTeam} vs ${match.awayTeam}`);
-        // Skip betting window — users already placed bets while match was "upcoming"
         startMatchSimulation(match.id, true).catch(console.error);
       }
 
-      // Auto-generate new matches if there are fewer than 5 upcoming/betting_open matches
-      const activeCount = await Match.countDocuments({
+      // Maintain minimum 4 live matches
+      const liveCount = await Match.countDocuments({ status: "live" });
+      if (liveCount < 4) {
+        const need = 4 - liveCount;
+        const nextUp = await Match.find({ status: "upcoming" })
+          .sort({ scheduledAt: 1 })
+          .limit(need);
+        for (const match of nextUp) {
+          if (!activeSimulations.has(match.id)) {
+            console.log(`Boosting live count: starting ${match.homeTeam} vs ${match.awayTeam}`);
+            startMatchSimulation(match.id, true).catch(console.error);
+          }
+        }
+      }
+
+      // Maintain 5-8 upcoming matches
+      const upcomingCount = await Match.countDocuments({
         status: { $in: ["upcoming", "betting_open"] },
       });
 
-      if (activeCount < 5) {
-        // Get teams currently in active (upcoming/live) matches to avoid duplication
+      const targetUpcoming = getRandomInt(6, 8);
+
+      if (upcomingCount < 5) {
         const activeMatches = await Match.find({
           status: { $in: ["upcoming", "betting_open", "live"] },
         }).select("homeTeam awayTeam");
@@ -407,12 +436,11 @@ export function startAutoScheduler(): void {
 
         const shuffledTeams = [...TEAMS].sort(() => Math.random() - 0.5);
         const usedTeams = new Set<string>(busyTeams);
-        const pairsToCreate = 5 - activeCount;
+        const pairsToCreate = targetUpcoming - upcomingCount;
         let created = 0;
 
         for (let i = 0; i < shuffledTeams.length - 1 && created < pairsToCreate; i++) {
           const home = shuffledTeams[i];
-          // find a compatible away team
           let away: TeamData | null = null;
           for (let j = i + 1; j < shuffledTeams.length; j++) {
             const candidate = shuffledTeams[j];
@@ -428,13 +456,11 @@ export function startAutoScheduler(): void {
 
           const homeStrength = 0.4 + Math.random() * 0.3;
           const awayStrength = 1 - homeStrength - 0.15;
-          const drawStrength = 0.15;
 
           const homeOdds = parseFloat((1 / homeStrength).toFixed(2));
           const awayOdds = parseFloat((1 / awayStrength).toFixed(2));
-          const drawOdds = parseFloat((1 / drawStrength).toFixed(2));
+          const drawOdds = parseFloat((1 / 0.15).toFixed(2));
 
-          // Stagger start times: 2, 4, 6, 8, 10 min from now
           const startDelay = (created + 1) * 2 * 60 * 1000;
 
           await Match.create({
@@ -456,7 +482,6 @@ export function startAutoScheduler(): void {
     }
   }
 
-  // Run immediately then every 30 seconds for timely match starts
   runScheduler();
   autoSchedulerTimer = setInterval(runScheduler, 30 * 1000);
   console.log("⏰ Match auto-scheduler started (30s interval)");

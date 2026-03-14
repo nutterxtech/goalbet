@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { UserLayout } from "@/components/layout/UserLayout";
-import { useGetTransactions, useDeposit, useWithdraw } from "@workspace/api-client-react";
+import { useGetTransactions, useWithdraw } from "@workspace/api-client-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { ArrowDownToLine, ArrowUpFromLine, Loader2, Smartphone, CheckCircle2, Share2, Copy } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, Loader2, Smartphone, CheckCircle2, Share2, Copy, XCircle } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -136,55 +136,79 @@ export default function TransactionsPage() {
 
 function DepositModal({ open, onOpenChange }: { open: boolean, onOpenChange: (open: boolean) => void }) {
   const [amount, setAmount] = useState("100");
-  const [step, setStep] = useState<"amount" | "mpesa" | "success">("amount");
-  const [countdown, setCountdown] = useState(15);
+  const [phone, setPhone] = useState("");
+  const [step, setStep] = useState<"amount" | "waiting" | "success" | "failed">("amount");
+  const [sending, setSending] = useState(false);
+  const [transactionId, setTransactionId] = useState<string | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const mutation = useDeposit({
-    mutation: {
-      onSuccess: () => {
-        setStep("success");
-        queryClient.invalidateQueries({ queryKey: ["/api/user/balance"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/user/transactions"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
-      },
-      onError: (err: any) => {
-        toast({ title: "Deposit failed", description: err.message, variant: "destructive" });
-        setStep("amount");
-      }
-    }
-  });
+  const parsedAmount = parseFloat(amount) || 0;
+  const displayPhone = phone || user?.phone || "";
 
-  // Simulate M-Pesa STK push countdown
   useEffect(() => {
-    if (step !== "mpesa") return;
-    setCountdown(15);
-    const interval = setInterval(() => {
-      setCountdown(prev => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          // Auto-confirm after countdown
-          mutation.mutate({ data: { amount: parseFloat(amount) } });
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [step]);
+    if (user?.phone && !phone) setPhone(user.phone);
+  }, [user]);
 
-  function handleClose(open: boolean) {
-    if (!open) {
-      setStep("amount");
-      setAmount("100");
+  // Poll for payment status when waiting
+  useEffect(() => {
+    if (step !== "waiting" || !transactionId) return;
+
+    pollRef.current = setInterval(async () => {
+      try {
+        const token = localStorage.getItem("goalbet_token");
+        const res = await fetch(`/api/user/deposit/mpesa/status/${transactionId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (data.status === "completed") {
+          clearInterval(pollRef.current!);
+          setStep("success");
+          queryClient.invalidateQueries({ queryKey: ["/api/user/balance"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/user/transactions"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+        } else if (data.status === "failed") {
+          clearInterval(pollRef.current!);
+          setStep("failed");
+        }
+      } catch {}
+    }, 3000);
+
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [step, transactionId]);
+
+  async function sendSTKPush() {
+    if (parsedAmount < 20 || !displayPhone) return;
+    setSending(true);
+    try {
+      const token = localStorage.getItem("goalbet_token");
+      const res = await fetch("/api/user/deposit/mpesa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ amount: parsedAmount, phone: displayPhone }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to send M-Pesa prompt");
+      setTransactionId(data.transactionId);
+      setStep("waiting");
+    } catch (err: any) {
+      toast({ title: "M-Pesa Error", description: err.message, variant: "destructive" });
+    } finally {
+      setSending(false);
     }
-    onOpenChange(open);
   }
 
-  const phone = user?.phone || "your registered phone";
-  const parsedAmount = parseFloat(amount) || 0;
+  function handleClose(v: boolean) {
+    if (!v) {
+      if (pollRef.current) clearInterval(pollRef.current);
+      setStep("amount");
+      setAmount("100");
+      setTransactionId(null);
+    }
+    onOpenChange(v);
+  }
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -206,42 +230,51 @@ function DepositModal({ open, onOpenChange }: { open: boolean, onOpenChange: (op
                   className="text-lg h-12 font-mono"
                 />
               </div>
-              <div className="p-3 bg-secondary/40 rounded-lg text-sm border border-border/50 flex items-center gap-2">
-                <Smartphone className="w-4 h-4 text-primary shrink-0" />
-                <span className="text-muted-foreground">Push will be sent to: <strong className="text-white">{phone}</strong></span>
+              <div className="space-y-2">
+                <label className="text-sm text-muted-foreground">M-Pesa Phone Number</label>
+                <Input
+                  type="tel"
+                  placeholder="+254712345678"
+                  value={displayPhone}
+                  onChange={e => setPhone(e.target.value)}
+                  className="h-11"
+                />
               </div>
               <Button
                 className="w-full h-12 font-bold"
-                onClick={() => setStep("mpesa")}
-                disabled={parsedAmount < 20}
+                onClick={sendSTKPush}
+                disabled={parsedAmount < 20 || !displayPhone || sending}
               >
+                {sending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Smartphone className="w-4 h-4 mr-2" />}
                 Send M-Pesa Prompt — {parsedAmount >= 20 ? formatCurrency(parsedAmount) : 'KSh 0'}
               </Button>
             </div>
           </>
         )}
 
-        {step === "mpesa" && (
+        {step === "waiting" && (
           <>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Loader2 className="w-5 h-5 animate-spin text-primary" />
                 Waiting for M-Pesa...
               </DialogTitle>
-              <DialogDescription>Check your phone and enter your M-Pesa PIN to confirm.</DialogDescription>
+              <DialogDescription>Check your phone and enter your M-Pesa PIN to confirm the payment.</DialogDescription>
             </DialogHeader>
-            <div className="py-4 space-y-6 text-center">
-              <div className="mx-auto w-24 h-24 rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center">
-                <span className="text-3xl font-display font-black text-primary">{countdown}</span>
+            <div className="py-6 space-y-4 text-center">
+              <div className="mx-auto w-20 h-20 rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center">
+                <Smartphone className="w-10 h-10 text-primary animate-pulse" />
               </div>
               <div className="space-y-1">
                 <p className="font-semibold text-white">STK Push Sent</p>
-                <p className="text-sm text-muted-foreground">An M-Pesa prompt for <strong className="text-white">{formatCurrency(parsedAmount)}</strong> was sent to <strong className="text-white">{phone}</strong>.</p>
-                <p className="text-xs text-muted-foreground mt-2">Auto-confirming in {countdown}s...</p>
+                <p className="text-sm text-muted-foreground">
+                  An M-Pesa prompt for <strong className="text-white">{formatCurrency(parsedAmount)}</strong> was sent to <strong className="text-white">{displayPhone}</strong>.
+                </p>
+                <p className="text-xs text-muted-foreground mt-2">Enter your PIN on your phone to complete the deposit.</p>
               </div>
-              <p className="text-xs text-muted-foreground border border-border/40 rounded-lg p-3 bg-secondary/30">
-                💡 In a live environment, your real M-Pesa PIN would authorize this. This simulation confirms automatically.
-              </p>
+              <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => handleClose(false)}>
+                Cancel
+              </Button>
             </div>
           </>
         )}
@@ -262,6 +295,21 @@ function DepositModal({ open, onOpenChange }: { open: boolean, onOpenChange: (op
                 <p className="text-muted-foreground text-sm mt-1">has been added to your wallet</p>
               </div>
               <Button className="w-full" onClick={() => handleClose(false)}>Done</Button>
+            </div>
+          </>
+        )}
+
+        {step === "failed" && (
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-destructive">
+                <XCircle className="w-5 h-5" /> Payment Cancelled
+              </DialogTitle>
+              <DialogDescription>The M-Pesa payment was not completed. No funds were deducted.</DialogDescription>
+            </DialogHeader>
+            <div className="py-4 flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => handleClose(false)}>Close</Button>
+              <Button className="flex-1" onClick={() => setStep("amount")}>Try Again</Button>
             </div>
           </>
         )}

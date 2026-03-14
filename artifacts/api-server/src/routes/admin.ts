@@ -3,6 +3,7 @@ import { requireAdmin, type AuthRequest } from "../middleware/auth.js";
 import { User } from "../models/User.js";
 import { Match } from "../models/Match.js";
 import { Bet } from "../models/Bet.js";
+import { initiateB2C } from "../services/darajaService.js";
 import { Transaction } from "../models/Transaction.js";
 import { ActivityLog } from "../models/ActivityLog.js";
 import { PlatformConfig, getConfig } from "../models/PlatformConfig.js";
@@ -562,7 +563,6 @@ router.put("/withdrawals/:id", async (req: AuthRequest, res) => {
   await tx.updateOne({ status: newStatus, processedBy: req.user!.id, processedAt: new Date() });
 
   if (action === "reject") {
-    // Refund the amount
     await User.findByIdAndUpdate(user._id, { $inc: { balance: tx.amount, totalWithdrawals: -tx.amount } });
     await Transaction.create({
       userId: user._id,
@@ -579,10 +579,36 @@ router.put("/withdrawals/:id", async (req: AuthRequest, res) => {
       message: `❌ Your withdrawal of KSh ${tx.amount} was rejected. Amount refunded. ${reason ? `Reason: ${reason}` : ""}`,
     });
   } else {
+    // Attempt M-Pesa B2C payout if configured
+    const config = await getConfig();
+    if (config.mpesaConfigured && config.mpesaConsumerKey && tx.accountDetails) {
+      try {
+        const phone = tx.accountDetails.replace(/\D/g, "");
+        const callbackBase = config.mpesaCallbackUrl.replace(/\/[^/]+$/, "");
+        await initiateB2C(
+          {
+            consumerKey: config.mpesaConsumerKey,
+            consumerSecret: config.mpesaConsumerSecret,
+            shortCode: config.mpesaShortCode,
+            passkey: config.mpesaPasskey,
+            callbackUrl: config.mpesaCallbackUrl,
+            environment: config.mpesaEnvironment,
+          },
+          phone,
+          tx.netAmount,
+          `${callbackBase}/api/user/withdraw/mpesa/callback`,
+          `${callbackBase}/api/user/withdraw/mpesa/timeout`,
+          `GoalBet withdrawal ${tx.id}`
+        );
+        console.log(`B2C sent to ${phone} for KSh ${tx.netAmount}`);
+      } catch (b2cErr: any) {
+        console.error("B2C failed:", b2cErr?.response?.data || b2cErr.message);
+      }
+    }
     await Notification.create({
       userId: user._id,
       type: "withdrawal_approved",
-      message: `✅ Your withdrawal of KSh ${tx.amount} (net KSh ${tx.netAmount.toFixed(2)}) has been approved and processed.`,
+      message: `✅ Your withdrawal of KSh ${tx.amount} (net KSh ${tx.netAmount.toFixed(2)}) has been approved. Funds will be in your M-Pesa shortly.`,
     });
   }
 
@@ -769,15 +795,30 @@ router.get("/config", async (req: AuthRequest, res) => {
     bettingWindowMinutes: config.bettingWindowMinutes,
     matchDurationSeconds: config.matchDurationSeconds,
     maxBetAmount: config.maxBetAmount,
+    mpesaConfigured: config.mpesaConfigured,
+    mpesaEnvironment: config.mpesaEnvironment,
+    mpesaShortCode: config.mpesaShortCode,
+    mpesaCallbackUrl: config.mpesaCallbackUrl,
+    mpesaConsumerKeySet: !!config.mpesaConsumerKey,
+    mpesaConsumerSecretSet: !!config.mpesaConsumerSecret,
+    mpesaPasskeySet: !!config.mpesaPasskey,
   });
 });
 
 // PUT /admin/config
 router.put("/config", async (req: AuthRequest, res) => {
   const config = await getConfig();
-  const fields = ["minDeposit", "minBet", "minWithdrawal", "withdrawalFeePercent", "bettingWindowMinutes", "matchDurationSeconds", "maxBetAmount"];
+  const fields = ["minDeposit", "minBet", "minWithdrawal", "withdrawalFeePercent", "bettingWindowMinutes", "matchDurationSeconds", "maxBetAmount", "mpesaEnvironment", "mpesaShortCode", "mpesaCallbackUrl"];
   for (const f of fields) {
     if (req.body[f] !== undefined) (config as any)[f] = req.body[f];
+  }
+  // M-Pesa credentials — only update if provided (never clear with empty string)
+  if (req.body.mpesaConsumerKey) config.mpesaConsumerKey = req.body.mpesaConsumerKey;
+  if (req.body.mpesaConsumerSecret) config.mpesaConsumerSecret = req.body.mpesaConsumerSecret;
+  if (req.body.mpesaPasskey) config.mpesaPasskey = req.body.mpesaPasskey;
+  // Mark configured if all required fields are present
+  if (config.mpesaConsumerKey && config.mpesaConsumerSecret && config.mpesaShortCode && config.mpesaPasskey && config.mpesaCallbackUrl) {
+    config.mpesaConfigured = true;
   }
   await config.save();
 

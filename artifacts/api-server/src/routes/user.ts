@@ -7,8 +7,58 @@ import { BetSlip } from "../models/BetSlip.js";
 import { Notification } from "../models/Notification.js";
 import { Match } from "../models/Match.js";
 import { getConfig } from "../models/PlatformConfig.js";
+import { initiateSTKPush } from "../services/darajaService.js";
 
 const router = Router();
+
+// Public callback endpoint — no auth (Safaricom calls this)
+router.post("/deposit/mpesa/callback", async (req, res) => {
+  try {
+    const body = req.body?.Body?.stkCallback;
+    if (!body) { res.json({ ResultCode: 0, ResultDesc: "Accepted" }); return; }
+
+    const resultCode = body.ResultCode;
+    const checkoutRequestId: string = body.CheckoutRequestID;
+
+    // Find pending transaction by mpesaCheckoutRequestId
+    const tx = await Transaction.findOne({ mpesaCheckoutRequestId: checkoutRequestId, status: "pending" });
+    if (!tx) { res.json({ ResultCode: 0, ResultDesc: "Accepted" }); return; }
+
+    if (resultCode === 0) {
+      // Payment successful
+      const metadata = body.CallbackMetadata?.Item as Array<{ Name: string; Value: any }> | undefined;
+      const getMeta = (name: string) => metadata?.find(i => i.Name === name)?.Value;
+      const amount = getMeta("Amount") ?? tx.amount;
+      const mpesaReceiptNumber = getMeta("MpesaReceiptNumber") ?? "";
+
+      tx.status = "completed";
+      tx.mpesaReceiptNumber = mpesaReceiptNumber;
+      await tx.save();
+
+      const user = await User.findByIdAndUpdate(
+        tx.userId,
+        { $inc: { balance: amount, totalDeposits: amount } },
+        { new: true }
+      );
+
+      await Notification.create({
+        userId: tx.userId,
+        type: "deposit",
+        message: `✅ M-Pesa deposit of KSh ${amount} confirmed (Ref: ${mpesaReceiptNumber}). Balance: KSh ${user!.balance.toFixed(2)}`,
+        data: { amount, mpesaReceiptNumber },
+      });
+    } else {
+      tx.status = "failed";
+      await tx.save();
+    }
+
+    res.json({ ResultCode: 0, ResultDesc: "Accepted" });
+  } catch (err) {
+    console.error("M-Pesa callback error:", err);
+    res.json({ ResultCode: 0, ResultDesc: "Accepted" });
+  }
+});
+
 router.use(authenticate);
 
 // GET /user/balance
@@ -17,7 +67,91 @@ router.get("/balance", async (req: AuthRequest, res) => {
   res.json({ balance: user?.balance ?? 0 });
 });
 
-// POST /user/deposit
+// POST /user/deposit/mpesa — initiates real STK push
+router.post("/deposit/mpesa", async (req: AuthRequest, res) => {
+  try {
+    const config = await getConfig();
+    const { amount, phone } = req.body;
+
+    if (!amount || amount < config.minDeposit) {
+      res.status(400).json({ message: `Minimum deposit is KSh ${config.minDeposit}` });
+      return;
+    }
+    if (!phone) {
+      res.status(400).json({ message: "Phone number is required" });
+      return;
+    }
+
+    if (!config.mpesaConfigured || !config.mpesaConsumerKey) {
+      res.status(503).json({ message: "M-Pesa is not configured yet. Contact support." });
+      return;
+    }
+
+    const user = await User.findById(req.user!.id);
+    if (!user) { res.status(404).json({ message: "User not found" }); return; }
+
+    // Create a pending transaction before STK push
+    const tx = await Transaction.create({
+      userId: req.user!.id,
+      type: "deposit",
+      amount,
+      fee: 0,
+      netAmount: amount,
+      status: "pending",
+      description: `M-Pesa deposit`,
+      mpesaPhone: phone,
+    });
+
+    const stkResult = await initiateSTKPush(
+      {
+        consumerKey: config.mpesaConsumerKey,
+        consumerSecret: config.mpesaConsumerSecret,
+        shortCode: config.mpesaShortCode,
+        passkey: config.mpesaPasskey,
+        callbackUrl: config.mpesaCallbackUrl,
+        environment: config.mpesaEnvironment,
+      },
+      phone,
+      amount,
+      `GB-${tx.id}`,
+      "GoalBet Deposit"
+    );
+
+    if (stkResult.ResponseCode !== "0") {
+      tx.status = "failed";
+      await tx.save();
+      res.status(502).json({ message: stkResult.ResponseDescription || "STK push failed" });
+      return;
+    }
+
+    tx.mpesaCheckoutRequestId = stkResult.CheckoutRequestID;
+    tx.mpesaMerchantRequestId = stkResult.MerchantRequestID;
+    await tx.save();
+
+    res.json({
+      success: true,
+      message: "M-Pesa prompt sent to your phone. Enter your PIN to confirm.",
+      checkoutRequestId: stkResult.CheckoutRequestID,
+      transactionId: tx.id,
+    });
+  } catch (err: any) {
+    console.error("STK push error:", err?.response?.data || err.message);
+    res.status(500).json({ message: err?.response?.data?.errorMessage || "Failed to initiate M-Pesa payment" });
+  }
+});
+
+// GET /user/deposit/mpesa/status/:transactionId — poll for STK push result
+router.get("/deposit/mpesa/status/:transactionId", async (req: AuthRequest, res) => {
+  try {
+    const tx = await Transaction.findOne({ _id: req.params.transactionId, userId: req.user!.id });
+    if (!tx) { res.status(404).json({ message: "Transaction not found" }); return; }
+    res.json({ status: tx.status, amount: tx.amount });
+  } catch {
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// POST /user/deposit — manual/admin credit (kept for fallback)
 router.post("/deposit", async (req: AuthRequest, res) => {
   try {
     const config = await getConfig();
@@ -109,7 +243,7 @@ router.post("/withdraw", async (req: AuthRequest, res) => {
     await Notification.create({
       userId: req.user!.id,
       type: "withdrawal",
-      message: `💸 Withdrawal of KSh ${amount} requested. Net: KSh ${netAmount.toFixed(2)} (after ${config.withdrawalFeePercent}% fee). Pending approval.`,
+      message: `💸 Withdrawal of KSh ${amount} requested. Net: KSh ${netAmount.toFixed(2)}. Pending approval.`,
       data: { amount, fee, netAmount },
     });
 
@@ -226,7 +360,7 @@ router.post("/notifications/read", async (req: AuthRequest, res) => {
   res.json({ success: true, message: "All notifications marked as read" });
 });
 
-// GET /user/slips — get current user's bet slips
+// GET /user/slips
 router.get("/slips", async (req: AuthRequest, res) => {
   try {
     const page = Number(req.query.page) || 1;
@@ -276,7 +410,7 @@ router.get("/slips", async (req: AuthRequest, res) => {
   }
 });
 
-// GET /user/slips/:slipId — get a single slip
+// GET /user/slips/:slipId
 router.get("/slips/:slipId", async (req: AuthRequest, res) => {
   try {
     const slip = await BetSlip.findOne({ slipId: req.params.slipId, userId: req.user!.id });
