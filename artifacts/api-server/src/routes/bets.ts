@@ -7,6 +7,7 @@ import { User } from "../models/User.js";
 import { Transaction } from "../models/Transaction.js";
 import { Notification } from "../models/Notification.js";
 import { getConfig } from "../models/PlatformConfig.js";
+import { analyzeAndProtect } from "../services/matchEngine.js";
 
 const router = Router();
 router.use(authenticate);
@@ -126,6 +127,13 @@ router.post("/slip", async (req: AuthRequest, res) => {
       });
     }
 
+    // Immediately analyze exposure for every match in this slip.
+    // If any match would put the platform in the red, forcedResult is set now —
+    // the live simulation will honour it at FT without touching the live ticker.
+    for (const sel of resolvedSelections) {
+      analyzeAndProtect(sel.matchId).catch(console.error);
+    }
+
     // Record transaction
     await Transaction.create({
       userId: req.user!.id,
@@ -217,6 +225,8 @@ router.post("/", async (req: AuthRequest, res) => {
     });
 
     await Match.findByIdAndUpdate(matchId, { $inc: { totalBets: 1, totalBetAmount: parsedStake } });
+    // Immediately analyze exposure for this match
+    analyzeAndProtect(matchId).catch(console.error);
     await Transaction.create({
       userId: req.user!.id, type: "bet", amount: -parsedStake, fee: 0, netAmount: -parsedStake,
       status: "completed", description: `Bet on ${match.homeTeam} vs ${match.awayTeam} (${outcome})`,

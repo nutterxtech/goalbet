@@ -192,6 +192,61 @@ async function settleBets(match: IMatch, _finalHome: number, _finalAway: number)
   }
 }
 
+/**
+ * Analyze match exposure and pre-set forcedResult early — called whenever bets land.
+ *
+ * Logic:
+ *  - Total collected  = sum of ALL pending bets on this match
+ *  - Danger outcome   = whichever outcome would cost the platform the most (biggest payout)
+ *  - If danger payout > total collected → force the match to the CHEAPEST outcome so the
+ *    majority of bettors who picked the dangerous side lose, protecting the platform.
+ *
+ * Constraints:
+ *  - Only runs while betting is open or during early live (≤ 70')
+ *  - Never overrides an admin-set forcedResult
+ *  - Operates silently — the live ticker still shows natural scores;
+ *    the forced outcome is applied at FT by the existing adjustScoreForResult path
+ */
+export async function analyzeAndProtect(matchId: string): Promise<void> {
+  try {
+    const match = await Match.findById(matchId);
+    if (!match) return;
+    // Only act while bets are still open or the match is still in early play
+    if (!["betting_open", "upcoming", "live"].includes(match.status)) return;
+    // Don't override an explicit admin decision
+    if (match.forcedResult) return;
+    // Too late to do anything meaningful in the second half's closing minutes
+    if (match.status === "live" && (match.minute ?? 0) > 70) return;
+
+    const bets = await Bet.find({ matchId: match._id, status: "pending" });
+    if (bets.length === 0) return;
+
+    const totalCollected = bets.reduce((sum, b) => sum + b.amount, 0);
+
+    const payoutByOutcome: Record<"home" | "draw" | "away", number> = { home: 0, draw: 0, away: 0 };
+    for (const bet of bets) {
+      payoutByOutcome[bet.outcome] += bet.amount * bet.odds;
+    }
+
+    // Outcome whose payout would hurt the platform most
+    const sorted = (Object.entries(payoutByOutcome) as ["home" | "draw" | "away", number][])
+      .sort((a, b) => b[1] - a[1]);
+    const [dangerOutcome, dangerPayout] = sorted[0];
+
+    if (dangerPayout > totalCollected) {
+      // Force to the outcome with the lowest payout (cheapest for the platform)
+      const safeOutcome = sorted[sorted.length - 1][0];
+      await Match.findByIdAndUpdate(matchId, { forcedResult: safeOutcome });
+      console.log(
+        `🛡️ Early protect [${match.homeTeam} vs ${match.awayTeam}]: ` +
+        `force→${safeOutcome} | danger:${dangerOutcome} payout KSh${dangerPayout.toFixed(0)} > collected KSh${totalCollected.toFixed(0)}`
+      );
+    }
+  } catch (err) {
+    console.error("analyzeAndProtect error:", err);
+  }
+}
+
 export async function startMatchSimulation(matchId: string, skipBettingWindow = false): Promise<void> {
   if (activeSimulations.has(matchId)) return;
 
@@ -237,6 +292,9 @@ export async function startMatchSimulation(matchId: string, skipBettingWindow = 
     awayScore: 0,
     events: [{ minute: 0, type: "kickoff", team: "home", description: `⚽ Kick off! ${matchDoc?.homeTeam} vs ${matchDoc?.awayTeam}` }],
   });
+
+  // Run exposure check at kickoff — catches any bets placed during the betting window
+  analyzeAndProtect(matchId).catch(console.error);
 
   const interval = setInterval(async () => {
     if (halftimePaused) return;
@@ -303,6 +361,9 @@ export async function startMatchSimulation(matchId: string, skipBettingWindow = 
           description: `🔔 Half time! Score: ${homeScore}-${awayScore}`,
         });
         await Match.findByIdAndUpdate(matchId, { minute: 45, homeScore, awayScore, events });
+
+        // Re-run exposure check at halftime — catches bets placed during live early phase
+        analyzeAndProtect(matchId).catch(console.error);
 
         // Pause simulation at 45' — ticker stays at HT until second half
         halftimePaused = true;
