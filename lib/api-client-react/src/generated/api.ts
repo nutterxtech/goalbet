@@ -30,12 +30,14 @@ import type {
   BalanceResponse,
   BetListResponse,
   BetResponse,
+  BetSlipResponse,
   CreateMatchRequest,
   DepositRequest,
   ErrorResponse,
   GetMatchesParams,
   GetTransactionsParams,
   GetUserBetsParams,
+  GetUserSlipsParams,
   HealthStatus,
   LeaderboardResponse,
   LogListResponse,
@@ -45,9 +47,11 @@ import type {
   NotificationListResponse,
   OverrideResultRequest,
   PlaceBetRequest,
+  PlaceSlipRequest,
   PlatformConfig,
   ProcessWithdrawalRequest,
   RegisterRequest,
+  SlipListResponse,
   SuccessResponse,
   TransactionListResponse,
   TransactionResponse,
@@ -1147,7 +1151,7 @@ export function useGetMatch<
 }
 
 /**
- * @summary Place a bet
+ * @summary Place a single bet (legacy — wraps as single-selection slip)
  */
 export const getPlaceBetUrl = () => {
   return `/api/bets`;
@@ -1210,7 +1214,7 @@ export type PlaceBetMutationBody = BodyType<PlaceBetRequest>;
 export type PlaceBetMutationError = ErrorType<ErrorResponse>;
 
 /**
- * @summary Place a bet
+ * @summary Place a single bet (legacy — wraps as single-selection slip)
  */
 export const usePlaceBet = <
   TError = ErrorType<ErrorResponse>,
@@ -1231,6 +1235,263 @@ export const usePlaceBet = <
 > => {
   return useMutation(getPlaceBetMutationOptions(options));
 };
+
+/**
+ * @summary Place an accumulator bet slip
+ */
+export const getPlaceBetSlipUrl = () => {
+  return `/api/bets/slip`;
+};
+
+export const placeBetSlip = async (
+  placeSlipRequest: PlaceSlipRequest,
+  options?: RequestInit,
+): Promise<BetSlipResponse> => {
+  return customFetch<BetSlipResponse>(getPlaceBetSlipUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(placeSlipRequest),
+  });
+};
+
+export const getPlaceBetSlipMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof placeBetSlip>>,
+    TError,
+    { data: BodyType<PlaceSlipRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof placeBetSlip>>,
+  TError,
+  { data: BodyType<PlaceSlipRequest> },
+  TContext
+> => {
+  const mutationKey = ["placeBetSlip"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof placeBetSlip>>,
+    { data: BodyType<PlaceSlipRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return placeBetSlip(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PlaceBetSlipMutationResult = NonNullable<
+  Awaited<ReturnType<typeof placeBetSlip>>
+>;
+export type PlaceBetSlipMutationBody = BodyType<PlaceSlipRequest>;
+export type PlaceBetSlipMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Place an accumulator bet slip
+ */
+export const usePlaceBetSlip = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof placeBetSlip>>,
+    TError,
+    { data: BodyType<PlaceSlipRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof placeBetSlip>>,
+  TError,
+  { data: BodyType<PlaceSlipRequest> },
+  TContext
+> => {
+  return useMutation(getPlaceBetSlipMutationOptions(options));
+};
+
+/**
+ * @summary Get current user's bet slips
+ */
+export const getGetUserSlipsUrl = (params?: GetUserSlipsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/user/slips?${stringifiedParams}`
+    : `/api/user/slips`;
+};
+
+export const getUserSlips = async (
+  params?: GetUserSlipsParams,
+  options?: RequestInit,
+): Promise<SlipListResponse> => {
+  return customFetch<SlipListResponse>(getGetUserSlipsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetUserSlipsQueryKey = (params?: GetUserSlipsParams) => {
+  return [`/api/user/slips`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetUserSlipsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getUserSlips>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetUserSlipsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getUserSlips>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetUserSlipsQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getUserSlips>>> = ({
+    signal,
+  }) => getUserSlips(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getUserSlips>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetUserSlipsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getUserSlips>>
+>;
+export type GetUserSlipsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get current user's bet slips
+ */
+
+export function useGetUserSlips<
+  TData = Awaited<ReturnType<typeof getUserSlips>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetUserSlipsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getUserSlips>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetUserSlipsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Get a single bet slip by ID
+ */
+export const getGetSlipUrl = (slipId: string) => {
+  return `/api/user/slips/${slipId}`;
+};
+
+export const getSlip = async (
+  slipId: string,
+  options?: RequestInit,
+): Promise<BetSlipResponse> => {
+  return customFetch<BetSlipResponse>(getGetSlipUrl(slipId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetSlipQueryKey = (slipId: string) => {
+  return [`/api/user/slips/${slipId}`] as const;
+};
+
+export const getGetSlipQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSlip>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  slipId: string,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof getSlip>>, TError, TData>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetSlipQueryKey(slipId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSlip>>> = ({
+    signal,
+  }) => getSlip(slipId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!slipId,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof getSlip>>, TError, TData> & {
+    queryKey: QueryKey;
+  };
+};
+
+export type GetSlipQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSlip>>
+>;
+export type GetSlipQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Get a single bet slip by ID
+ */
+
+export function useGetSlip<
+  TData = Awaited<ReturnType<typeof getSlip>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  slipId: string,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof getSlip>>, TError, TData>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetSlipQueryOptions(slipId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * @summary Get leaderboard

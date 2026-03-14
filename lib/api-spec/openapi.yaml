@@ -285,7 +285,7 @@ paths:
     post:
       operationId: placeBet
       tags: [bets]
-      summary: Place a bet
+      summary: Place a single bet (legacy — wraps as single-selection slip)
       security:
         - BearerAuth: []
       requestBody:
@@ -303,6 +303,89 @@ paths:
                 $ref: "#/components/schemas/BetResponse"
         "400":
           description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /bets/slip:
+    post:
+      operationId: placeBetSlip
+      tags: [bets]
+      summary: Place an accumulator bet slip
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlaceSlipRequest"
+      responses:
+        "201":
+          description: Slip placed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BetSlipResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /user/slips:
+    get:
+      operationId: getUserSlips
+      tags: [bets]
+      summary: Get current user's bet slips
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: number
+        - name: limit
+          in: query
+          schema:
+            type: number
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, won, lost, refunded]
+      responses:
+        "200":
+          description: Slips
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SlipListResponse"
+
+  /user/slips/{slipId}:
+    get:
+      operationId: getSlip
+      tags: [bets]
+      summary: Get a single bet slip by ID
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: slipId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Slip
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BetSlipResponse"
+        "404":
+          description: Not found
           content:
             application/json:
               schema:
@@ -1268,3 +1351,88 @@ components:
         maxBetAmount:
           type: number
       required: [minDeposit, minBet, minWithdrawal, withdrawalFeePercent, bettingWindowMinutes, matchDurationSeconds]
+
+    SlipSelection:
+      type: object
+      properties:
+        matchId:
+          type: string
+        homeTeam:
+          type: string
+        awayTeam:
+          type: string
+        outcome:
+          type: string
+          enum: [home, draw, away]
+        odds:
+          type: number
+        status:
+          type: string
+          enum: [pending, won, lost, refunded]
+        matchResult:
+          type: string
+          enum: [home, draw, away]
+      required: [matchId, homeTeam, awayTeam, outcome, odds, status]
+
+    BetSlipResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        slipId:
+          type: string
+        userId:
+          type: string
+        selections:
+          type: array
+          items:
+            $ref: "#/components/schemas/SlipSelection"
+        combinedOdds:
+          type: number
+        stake:
+          type: number
+        potentialWinnings:
+          type: number
+        status:
+          type: string
+          enum: [pending, won, lost, refunded]
+        actualWinnings:
+          type: number
+        createdAt:
+          type: string
+        settledAt:
+          type: string
+      required: [slipId, userId, selections, combinedOdds, stake, potentialWinnings, status]
+
+    PlaceSlipRequest:
+      type: object
+      properties:
+        selections:
+          type: array
+          items:
+            type: object
+            properties:
+              matchId:
+                type: string
+              outcome:
+                type: string
+                enum: [home, draw, away]
+            required: [matchId, outcome]
+        stake:
+          type: number
+      required: [selections, stake]
+
+    SlipListResponse:
+      type: object
+      properties:
+        slips:
+          type: array
+          items:
+            $ref: "#/components/schemas/BetSlipResponse"
+        total:
+          type: number
+        page:
+          type: number
+        totalPages:
+          type: number
+      required: [slips, total]

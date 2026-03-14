@@ -97,18 +97,22 @@ workspace/
 
 - **Currency**: Always KSh (Kenyan Shillings)
 - **Min deposit**: KSh 20
-- **Min bet**: KSh 5
+- **Min bet / slip stake**: KSh 5
 - **Min withdrawal**: KSh 50 with 12% platform fee
+- **Betting model**: Accumulator slip system — users click match card outcomes to add to a floating slip, then stake and submit as one slip (all selections must win)
 - **Match lifecycle**: `upcoming` → `betting_open` → `live` → `completed`
-  - When admin clicks "Start Match", betting window opens automatically for `bettingWindowMinutes` (default: 60 min)
+  - Auto-scheduler keeps 5 minimum upcoming matches, staggered 2/4/6/8/10 min apart
+  - No team can be in two active matches simultaneously (same-team conflict check)
   - After betting window closes, 90-minute simulation runs in `matchDurationSeconds` (default: 120 sec)
-  - Bets are settled automatically when match completes
+  - Slips are settled automatically when each match in the slip completes (accumulator logic)
+- **Auto-balance**: If platform would pay out more than collected, engine overrides result to minimum-payout outcome
+- **Leaderboard**: Only shows users with totalWins > 0
 
 ## Admin User
 
-- Email: `admin@goalbet.com`
-- Password: `admin123`
-- Role: `admin` (set via direct MongoDB update after registration)
+- **Admin credentials**: Email: `nutterxtech@gmail.com`, Password: `BILLnutter001002`
+- **Admin secret URL**: `/?isadmin=nutterx=true` → `/admin-secret` → sets `sessionStorage.goalbet_admin_unlocked = "1"` → `/admin`
+- Role: `admin` (seeded via `seedAdminAccount()` in `app.ts`)
 
 ## API Codegen
 

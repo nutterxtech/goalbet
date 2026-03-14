@@ -24,7 +24,6 @@ export interface RegisterRequest {
   email: string;
   password: string;
   phone?: string;
-  referralCode?: string;
 }
 
 export interface LoginRequest {
@@ -60,9 +59,6 @@ export interface UserProfile {
   totalBets?: number;
   totalWins?: number;
   totalWinnings?: number;
-  referralCode?: string;
-  referralCount?: number;
-  referralEarnings?: number;
   createdAt?: string;
 }
 
@@ -398,6 +394,94 @@ export interface PlatformConfig {
   maxBetAmount?: number;
 }
 
+export type SlipSelectionOutcome =
+  (typeof SlipSelectionOutcome)[keyof typeof SlipSelectionOutcome];
+
+export const SlipSelectionOutcome = {
+  home: "home",
+  draw: "draw",
+  away: "away",
+} as const;
+
+export type SlipSelectionStatus =
+  (typeof SlipSelectionStatus)[keyof typeof SlipSelectionStatus];
+
+export const SlipSelectionStatus = {
+  pending: "pending",
+  won: "won",
+  lost: "lost",
+  refunded: "refunded",
+} as const;
+
+export type SlipSelectionMatchResult =
+  (typeof SlipSelectionMatchResult)[keyof typeof SlipSelectionMatchResult];
+
+export const SlipSelectionMatchResult = {
+  home: "home",
+  draw: "draw",
+  away: "away",
+} as const;
+
+export interface SlipSelection {
+  matchId: string;
+  homeTeam: string;
+  awayTeam: string;
+  outcome: SlipSelectionOutcome;
+  odds: number;
+  status: SlipSelectionStatus;
+  matchResult?: SlipSelectionMatchResult;
+}
+
+export type BetSlipResponseStatus =
+  (typeof BetSlipResponseStatus)[keyof typeof BetSlipResponseStatus];
+
+export const BetSlipResponseStatus = {
+  pending: "pending",
+  won: "won",
+  lost: "lost",
+  refunded: "refunded",
+} as const;
+
+export interface BetSlipResponse {
+  id?: string;
+  slipId: string;
+  userId: string;
+  selections: SlipSelection[];
+  combinedOdds: number;
+  stake: number;
+  potentialWinnings: number;
+  status: BetSlipResponseStatus;
+  actualWinnings?: number;
+  createdAt?: string;
+  settledAt?: string;
+}
+
+export type PlaceSlipRequestSelectionsItemOutcome =
+  (typeof PlaceSlipRequestSelectionsItemOutcome)[keyof typeof PlaceSlipRequestSelectionsItemOutcome];
+
+export const PlaceSlipRequestSelectionsItemOutcome = {
+  home: "home",
+  draw: "draw",
+  away: "away",
+} as const;
+
+export type PlaceSlipRequestSelectionsItem = {
+  matchId: string;
+  outcome: PlaceSlipRequestSelectionsItemOutcome;
+};
+
+export interface PlaceSlipRequest {
+  selections: PlaceSlipRequestSelectionsItem[];
+  stake: number;
+}
+
+export interface SlipListResponse {
+  slips: BetSlipResponse[];
+  total: number;
+  page?: number;
+  totalPages?: number;
+}
+
 export type GetTransactionsParams = {
   page?: number;
   limit?: number;
@@ -419,6 +503,22 @@ export const GetMatchesStatus = {
   upcoming: "upcoming",
   live: "live",
   completed: "completed",
+} as const;
+
+export type GetUserSlipsParams = {
+  page?: number;
+  limit?: number;
+  status?: GetUserSlipsStatus;
+};
+
+export type GetUserSlipsStatus =
+  (typeof GetUserSlipsStatus)[keyof typeof GetUserSlipsStatus];
+
+export const GetUserSlipsStatus = {
+  pending: "pending",
+  won: "won",
+  lost: "lost",
+  refunded: "refunded",
 } as const;
 
 export type AdminGetUsersParams = {

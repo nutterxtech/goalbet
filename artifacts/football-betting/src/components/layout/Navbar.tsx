@@ -1,4 +1,4 @@
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { 
@@ -32,10 +32,12 @@ export function Navbar() {
     }
   });
 
+  const [location] = useLocation();
+
   const { data: notificationsData } = useGetNotifications({
     query: {
-      enabled: !!user,
-      refetchInterval: 5000
+      enabled: !!user && !isAdmin,
+      refetchInterval: 15000
     }
   });
 
@@ -60,41 +62,21 @@ export function Navbar() {
                 </div>
               )}
 
-              {/* Notifications */}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="relative h-10 w-10 rounded-full hover:bg-card">
+              {/* Notifications — link to full page */}
+              {!isAdmin && (
+                <Link href="/dashboard/notifications">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={`relative h-10 w-10 rounded-full hover:bg-card ${location === "/dashboard/notifications" ? "bg-card text-white" : ""}`}
+                  >
                     <Bell className="h-5 w-5 text-muted-foreground hover:text-white transition-colors" />
                     {(notificationsData?.unreadCount ?? 0) > 0 && (
                       <span className="absolute top-1.5 right-2 h-2.5 w-2.5 rounded-full bg-destructive animate-pulse" />
                     )}
                   </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-80 p-0 border-border/50">
-                  <div className="p-4 border-b border-border flex items-center justify-between">
-                    <span className="font-semibold">Notifications</span>
-                    <Badge variant="secondary" className="bg-primary/10 text-primary hover:bg-primary/20">
-                      {notificationsData?.unreadCount || 0} New
-                    </Badge>
-                  </div>
-                  <div className="max-h-80 overflow-y-auto">
-                    {notificationsData?.notifications?.length ? (
-                      notificationsData.notifications.map(n => (
-                        <div key={n.id} className={`p-4 border-b border-border/50 last:border-0 text-sm ${!n.read ? 'bg-primary/5' : ''}`}>
-                          <p className={`font-medium ${!n.read ? 'text-white' : 'text-muted-foreground'}`}>{n.message}</p>
-                          <p className="text-xs text-muted-foreground mt-1 opacity-70">
-                            {new Date(n.createdAt).toLocaleTimeString()}
-                          </p>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="p-8 text-center text-muted-foreground text-sm">
-                        No notifications yet.
-                      </div>
-                    )}
-                  </div>
-                </DropdownMenuContent>
-              </DropdownMenu>
+                </Link>
+              )}
 
               {/* User Menu */}
               <DropdownMenu>

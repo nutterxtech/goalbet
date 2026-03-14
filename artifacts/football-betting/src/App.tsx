@@ -16,6 +16,7 @@ import MatchesPage from "@/pages/dashboard/matches";
 import MyBetsPage from "@/pages/dashboard/my-bets";
 import TransactionsPage from "@/pages/dashboard/transactions";
 import LeaderboardPage from "@/pages/dashboard/leaderboard";
+import NotificationsPage from "@/pages/dashboard/notifications";
 
 // Admin Pages
 import AdminOverview from "@/pages/admin/overview";
@@ -61,6 +62,7 @@ function Router() {
         <Route path="/dashboard" component={MatchesPage} />
         <Route path="/dashboard/my-bets" component={MyBetsPage} />
         <Route path="/dashboard/transactions" component={TransactionsPage} />
+        <Route path="/dashboard/notifications" component={NotificationsPage} />
         <Route path="/dashboard/leaderboard" component={LeaderboardPage} />
 
         {/* Admin Routes */}

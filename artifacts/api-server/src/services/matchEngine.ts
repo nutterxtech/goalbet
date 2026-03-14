@@ -1,5 +1,6 @@
 import { Match, IMatch } from "../models/Match.js";
 import { Bet } from "../models/Bet.js";
+import { BetSlip } from "../models/BetSlip.js";
 import { User } from "../models/User.js";
 import { Transaction } from "../models/Transaction.js";
 import { Notification } from "../models/Notification.js";
@@ -33,53 +34,135 @@ function pickRandom<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-async function settleBets(match: IMatch) {
+/**
+ * Auto-balance: if paying the natural winner would cost the platform more than collected,
+ * override the result to the outcome with minimum payout.
+ */
+async function autoBalanceResult(match: IMatch): Promise<"home" | "draw" | "away"> {
   const result = match.result!;
   const bets = await Bet.find({ matchId: match._id, status: "pending" });
 
+  // Tally collected and payout per outcome
+  const collected = bets.reduce((sum, b) => sum + b.amount, 0);
+  const payoutByOutcome: Record<"home" | "draw" | "away", number> = { home: 0, draw: 0, away: 0 };
+  for (const bet of bets) {
+    payoutByOutcome[bet.outcome] += bet.amount * bet.odds;
+  }
+
+  // Check if natural result would cause a platform loss
+  if (payoutByOutcome[result] > collected * 0.88) {
+    // Pick the outcome with minimum payout to protect platform
+    const minOutcome = (Object.keys(payoutByOutcome) as ("home" | "draw" | "away")[])
+      .sort((a, b) => payoutByOutcome[a] - payoutByOutcome[b])[0];
+    if (minOutcome !== result) {
+      console.log(`⚖️ Auto-balance: overriding ${result} → ${minOutcome} to protect platform (collected=${collected}, payout would be ${payoutByOutcome[result].toFixed(2)})`);
+      // Update the match result in DB
+      await Match.findByIdAndUpdate(match._id, { result: minOutcome });
+      return minOutcome;
+    }
+  }
+  return result;
+}
+
+async function settleBets(match: IMatch) {
+  // Check auto-balance before settling
+  const result = await autoBalanceResult(match);
+
+  // Settle individual bets
+  const bets = await Bet.find({ matchId: match._id, status: "pending" });
   for (const bet of bets) {
     const won = bet.outcome === result;
     if (won) {
-      const winnings = bet.amount * bet.odds;
       bet.status = "won";
-      bet.actualWinnings = winnings;
+      bet.actualWinnings = bet.amount * bet.odds;
       bet.settledAt = new Date();
       await bet.save();
-
-      await User.findByIdAndUpdate(bet.userId, {
-        $inc: { balance: winnings, totalWins: 1, totalWinnings: winnings },
-      });
-
-      await Transaction.create({
-        userId: bet.userId,
-        type: "winnings",
-        amount: winnings,
-        fee: 0,
-        netAmount: winnings,
-        status: "completed",
-        description: `Winnings from ${match.homeTeam} vs ${match.awayTeam}`,
-      });
-
-      await Notification.create({
-        userId: bet.userId,
-        type: "bet_won",
-        message: `🎉 You won KSh ${winnings.toFixed(2)} on ${match.homeTeam} vs ${match.awayTeam}!`,
-        data: { matchId: match._id, winnings },
-      });
     } else {
       bet.status = "lost";
       bet.settledAt = new Date();
       await bet.save();
-
-      await Notification.create({
-        userId: bet.userId,
-        type: "bet_lost",
-        message: `❌ You lost your bet on ${match.homeTeam} vs ${match.awayTeam}.`,
-        data: { matchId: match._id },
-      });
     }
-
     await User.findByIdAndUpdate(bet.userId, { $inc: { totalBets: 1 } });
+  }
+
+  // Settle slip selections for this match
+  const pendingSlips = await BetSlip.find({
+    "selections.matchId": match._id,
+    "selections.status": "pending",
+    status: "pending",
+  });
+
+  for (const slip of pendingSlips) {
+    let selectionUpdated = false;
+    for (const sel of slip.selections) {
+      if (sel.matchId.toString() === match._id.toString() && sel.status === "pending") {
+        sel.status = sel.outcome === result ? "won" : "lost";
+        sel.matchResult = result;
+        selectionUpdated = true;
+      }
+    }
+    if (!selectionUpdated) continue;
+
+    const allSettled = slip.selections.every(s => s.status !== "pending");
+    const anyLost = slip.selections.some(s => s.status === "lost");
+
+    if (allSettled) {
+      // Accumulator: all must win — any lost = slip lost
+      if (anyLost) {
+        slip.status = "lost";
+        slip.settledAt = new Date();
+        await slip.save();
+
+        await Notification.create({
+          userId: slip.userId,
+          type: "bet_lost",
+          message: `❌ Slip #${slip.slipId} lost — ${match.homeTeam} vs ${match.awayTeam} didn't go your way.`,
+          data: { slipId: slip.slipId },
+        });
+      } else {
+        // All won
+        const winnings = parseFloat((slip.stake * slip.combinedOdds).toFixed(2));
+        slip.status = "won";
+        slip.actualWinnings = winnings;
+        slip.settledAt = new Date();
+        await slip.save();
+
+        await User.findByIdAndUpdate(slip.userId, {
+          $inc: { balance: winnings, totalWins: 1, totalWinnings: winnings },
+        });
+        await Transaction.create({
+          userId: slip.userId,
+          type: "winnings",
+          amount: winnings,
+          fee: 0,
+          netAmount: winnings,
+          status: "completed",
+          description: `Winnings from slip #${slip.slipId} (${slip.selections.length} selections)`,
+        });
+        await Notification.create({
+          userId: slip.userId,
+          type: "bet_won",
+          message: `🎉 Slip #${slip.slipId} WON! You won KSh ${winnings.toFixed(2)}! All ${slip.selections.length} selections correct!`,
+          data: { slipId: slip.slipId, winnings },
+        });
+      }
+    } else {
+      // Partially settled — if any selection lost, slip is already lost (no point waiting)
+      if (anyLost) {
+        slip.status = "lost";
+        slip.settledAt = new Date();
+        await slip.save();
+
+        await Notification.create({
+          userId: slip.userId,
+          type: "bet_lost",
+          message: `❌ Slip #${slip.slipId} lost — ${match.homeTeam} vs ${match.awayTeam} knocked you out.`,
+          data: { slipId: slip.slipId },
+        });
+      } else {
+        await slip.save(); // save progress
+      }
+    }
   }
 }
 
@@ -306,28 +389,43 @@ export function startAutoScheduler(): void {
         startMatchSimulation(match.id, true).catch(console.error);
       }
 
-      // Auto-generate new matches if there are fewer than 3 upcoming/betting_open matches
+      // Auto-generate new matches if there are fewer than 5 upcoming/betting_open matches
       const activeCount = await Match.countDocuments({
         status: { $in: ["upcoming", "betting_open"] },
       });
 
-      if (activeCount < 3) {
-        const shuffledTeams = [...TEAMS].sort(() => Math.random() - 0.5);
-        const usedTeams = new Set<string>();
-        const pairsToCreate = 3 - activeCount;
+      if (activeCount < 5) {
+        // Get teams currently in active (upcoming/live) matches to avoid duplication
+        const activeMatches = await Match.find({
+          status: { $in: ["upcoming", "betting_open", "live"] },
+        }).select("homeTeam awayTeam");
+        const busyTeams = new Set<string>();
+        for (const m of activeMatches) {
+          busyTeams.add(m.homeTeam);
+          busyTeams.add(m.awayTeam);
+        }
 
+        const shuffledTeams = [...TEAMS].sort(() => Math.random() - 0.5);
+        const usedTeams = new Set<string>(busyTeams);
+        const pairsToCreate = 5 - activeCount;
         let created = 0;
+
         for (let i = 0; i < shuffledTeams.length - 1 && created < pairsToCreate; i++) {
           const home = shuffledTeams[i];
-          const away = shuffledTeams[i + 1];
-
-          if (usedTeams.has(home.name) || usedTeams.has(away.name)) continue;
-          if (home.name === away.name) continue;
+          // find a compatible away team
+          let away: TeamData | null = null;
+          for (let j = i + 1; j < shuffledTeams.length; j++) {
+            const candidate = shuffledTeams[j];
+            if (!usedTeams.has(candidate.name) && candidate.name !== home.name) {
+              away = candidate;
+              break;
+            }
+          }
+          if (!away || usedTeams.has(home.name)) continue;
 
           usedTeams.add(home.name);
           usedTeams.add(away.name);
 
-          // Generate realistic odds based on random strength
           const homeStrength = 0.4 + Math.random() * 0.3;
           const awayStrength = 1 - homeStrength - 0.15;
           const drawStrength = 0.15;
@@ -335,6 +433,9 @@ export function startAutoScheduler(): void {
           const homeOdds = parseFloat((1 / homeStrength).toFixed(2));
           const awayOdds = parseFloat((1 / awayStrength).toFixed(2));
           const drawOdds = parseFloat((1 / drawStrength).toFixed(2));
+
+          // Stagger start times: 2, 4, 6, 8, 10 min from now
+          const startDelay = (created + 1) * 2 * 60 * 1000;
 
           await Match.create({
             homeTeam: home.name,
@@ -344,7 +445,7 @@ export function startAutoScheduler(): void {
             league: home.league,
             odds: { home: homeOdds, draw: drawOdds, away: awayOdds },
             status: "upcoming",
-            scheduledAt: new Date(Date.now() + 2 * 60 * 1000), // 2 min from now
+            scheduledAt: new Date(Date.now() + startDelay),
           });
 
           created++;

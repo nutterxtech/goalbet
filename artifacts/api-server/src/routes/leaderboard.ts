@@ -8,7 +8,7 @@ router.use(optionalAuth);
 // GET /leaderboard
 router.get("/", async (req: AuthRequest, res) => {
   try {
-    const top = await User.find({ role: "user", status: "active" })
+    const top = await User.find({ role: "user", status: "active", totalWins: { $gt: 0 } })
       .sort({ totalWinnings: -1 })
       .limit(10)
       .select("username totalWinnings totalBets totalWins");

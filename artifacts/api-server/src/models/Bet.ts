@@ -9,6 +9,7 @@ export interface IBet extends Document {
   potentialWinnings: number;
   status: "pending" | "won" | "lost" | "refunded";
   actualWinnings: number;
+  slipId?: string;
   createdAt: Date;
   settledAt?: Date;
 }
@@ -23,6 +24,7 @@ const BetSchema = new Schema<IBet>(
     potentialWinnings: { type: Number, required: true },
     status: { type: String, enum: ["pending", "won", "lost", "refunded"], default: "pending" },
     actualWinnings: { type: Number, default: 0 },
+    slipId: { type: String },
     settledAt: Date,
   },
   { timestamps: true }

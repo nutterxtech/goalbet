@@ -201,6 +201,26 @@ router.post("/matches", async (req: AuthRequest, res) => {
       res.status(400).json({ message: "homeTeam, awayTeam and odds are required" });
       return;
     }
+    if (homeTeam === awayTeam) {
+      res.status(400).json({ message: "Home and away teams cannot be the same" });
+      return;
+    }
+
+    // Same-team conflict check: no team should be in two active matches
+    const conflict = await Match.findOne({
+      status: { $in: ["upcoming", "betting_open", "live"] },
+      $or: [
+        { homeTeam: { $in: [homeTeam, awayTeam] } },
+        { awayTeam: { $in: [homeTeam, awayTeam] } },
+      ],
+    });
+    if (conflict) {
+      const busyTeam = [homeTeam, awayTeam].find(
+        t => t === conflict.homeTeam || t === conflict.awayTeam
+      );
+      res.status(400).json({ message: `${busyTeam} is already in an active match` });
+      return;
+    }
 
     const match = await Match.create({
       homeTeam,

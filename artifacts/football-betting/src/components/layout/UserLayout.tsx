@@ -1,12 +1,13 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { Trophy, History, ArrowLeftRight, Activity } from "lucide-react";
+import { Trophy, History, ArrowLeftRight, Activity, Bell } from "lucide-react";
 import { Navbar } from "./Navbar";
 
 const navItems = [
   { href: "/dashboard", label: "Matches", icon: Activity },
   { href: "/dashboard/my-bets", label: "My Bets", icon: History },
   { href: "/dashboard/transactions", label: "Wallet", icon: ArrowLeftRight },
+  { href: "/dashboard/notifications", label: "Notifications", icon: Bell },
   { href: "/dashboard/leaderboard", label: "Leaderboard", icon: Trophy },
 ];
 

@@ -319,12 +319,96 @@ export const GetMatchResponse = zod.object({
 });
 
 /**
- * @summary Place a bet
+ * @summary Place a single bet (legacy — wraps as single-selection slip)
  */
 export const PlaceBetBody = zod.object({
   matchId: zod.string(),
   outcome: zod.enum(["home", "draw", "away"]),
   amount: zod.number(),
+});
+
+/**
+ * @summary Place an accumulator bet slip
+ */
+export const PlaceBetSlipBody = zod.object({
+  selections: zod.array(
+    zod.object({
+      matchId: zod.string(),
+      outcome: zod.enum(["home", "draw", "away"]),
+    }),
+  ),
+  stake: zod.number(),
+});
+
+/**
+ * @summary Get current user's bet slips
+ */
+export const GetUserSlipsQueryParams = zod.object({
+  page: zod.coerce.number().optional(),
+  limit: zod.coerce.number().optional(),
+  status: zod.enum(["pending", "won", "lost", "refunded"]).optional(),
+});
+
+export const GetUserSlipsResponse = zod.object({
+  slips: zod.array(
+    zod.object({
+      id: zod.string().optional(),
+      slipId: zod.string(),
+      userId: zod.string(),
+      selections: zod.array(
+        zod.object({
+          matchId: zod.string(),
+          homeTeam: zod.string(),
+          awayTeam: zod.string(),
+          outcome: zod.enum(["home", "draw", "away"]),
+          odds: zod.number(),
+          status: zod.enum(["pending", "won", "lost", "refunded"]),
+          matchResult: zod.enum(["home", "draw", "away"]).optional(),
+        }),
+      ),
+      combinedOdds: zod.number(),
+      stake: zod.number(),
+      potentialWinnings: zod.number(),
+      status: zod.enum(["pending", "won", "lost", "refunded"]),
+      actualWinnings: zod.number().optional(),
+      createdAt: zod.string().optional(),
+      settledAt: zod.string().optional(),
+    }),
+  ),
+  total: zod.number(),
+  page: zod.number().optional(),
+  totalPages: zod.number().optional(),
+});
+
+/**
+ * @summary Get a single bet slip by ID
+ */
+export const GetSlipParams = zod.object({
+  slipId: zod.coerce.string(),
+});
+
+export const GetSlipResponse = zod.object({
+  id: zod.string().optional(),
+  slipId: zod.string(),
+  userId: zod.string(),
+  selections: zod.array(
+    zod.object({
+      matchId: zod.string(),
+      homeTeam: zod.string(),
+      awayTeam: zod.string(),
+      outcome: zod.enum(["home", "draw", "away"]),
+      odds: zod.number(),
+      status: zod.enum(["pending", "won", "lost", "refunded"]),
+      matchResult: zod.enum(["home", "draw", "away"]).optional(),
+    }),
+  ),
+  combinedOdds: zod.number(),
+  stake: zod.number(),
+  potentialWinnings: zod.number(),
+  status: zod.enum(["pending", "won", "lost", "refunded"]),
+  actualWinnings: zod.number().optional(),
+  createdAt: zod.string().optional(),
+  settledAt: zod.string().optional(),
 });
 
 /**

@@ -3,6 +3,7 @@ import { authenticate, type AuthRequest } from "../middleware/auth.js";
 import { User } from "../models/User.js";
 import { Transaction } from "../models/Transaction.js";
 import { Bet } from "../models/Bet.js";
+import { BetSlip } from "../models/BetSlip.js";
 import { Notification } from "../models/Notification.js";
 import { Match } from "../models/Match.js";
 import { getConfig } from "../models/PlatformConfig.js";
@@ -223,6 +224,88 @@ router.get("/notifications", async (req: AuthRequest, res) => {
 router.post("/notifications/read", async (req: AuthRequest, res) => {
   await Notification.updateMany({ userId: req.user!.id, read: false }, { read: true });
   res.json({ success: true, message: "All notifications marked as read" });
+});
+
+// GET /user/slips — get current user's bet slips
+router.get("/slips", async (req: AuthRequest, res) => {
+  try {
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+    const status = req.query.status as string | undefined;
+
+    const filter: Record<string, unknown> = { userId: req.user!.id };
+    if (status && ["pending", "won", "lost", "refunded"].includes(status)) {
+      filter.status = status;
+    }
+
+    const [slips, total] = await Promise.all([
+      BetSlip.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
+      BetSlip.countDocuments(filter),
+    ]);
+
+    res.json({
+      slips: slips.map((s) => ({
+        id: s.id,
+        slipId: s.slipId,
+        userId: s.userId.toString(),
+        selections: s.selections.map((sel) => ({
+          matchId: sel.matchId.toString(),
+          homeTeam: sel.homeTeam,
+          awayTeam: sel.awayTeam,
+          outcome: sel.outcome,
+          odds: sel.odds,
+          status: sel.status,
+          matchResult: sel.matchResult,
+        })),
+        combinedOdds: s.combinedOdds,
+        stake: s.stake,
+        potentialWinnings: s.potentialWinnings,
+        status: s.status,
+        actualWinnings: s.actualWinnings,
+        createdAt: s.createdAt,
+        settledAt: s.settledAt,
+      })),
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+    });
+  } catch (err) {
+    console.error("Get slips error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// GET /user/slips/:slipId — get a single slip
+router.get("/slips/:slipId", async (req: AuthRequest, res) => {
+  try {
+    const slip = await BetSlip.findOne({ slipId: req.params.slipId, userId: req.user!.id });
+    if (!slip) { res.status(404).json({ message: "Slip not found" }); return; }
+
+    res.json({
+      id: slip.id,
+      slipId: slip.slipId,
+      userId: slip.userId.toString(),
+      selections: slip.selections.map((sel) => ({
+        matchId: sel.matchId.toString(),
+        homeTeam: sel.homeTeam,
+        awayTeam: sel.awayTeam,
+        outcome: sel.outcome,
+        odds: sel.odds,
+        status: sel.status,
+        matchResult: sel.matchResult,
+      })),
+      combinedOdds: slip.combinedOdds,
+      stake: slip.stake,
+      potentialWinnings: slip.potentialWinnings,
+      status: slip.status,
+      actualWinnings: slip.actualWinnings,
+      createdAt: slip.createdAt,
+      settledAt: slip.settledAt,
+    });
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
 });
 
 export default router;
