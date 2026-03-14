@@ -8,6 +8,8 @@ export interface IPlatformConfig extends Document {
   bettingWindowMinutes: number;
   matchDurationSeconds: number;
   maxBetAmount: number;
+  consolationRefundPercent: number;
+  referralRewardAmount: number;
   mpesaConsumerKey: string;
   mpesaConsumerSecret: string;
   mpesaShortCode: string;
@@ -26,6 +28,8 @@ const PlatformConfigSchema = new Schema<IPlatformConfig>(
     bettingWindowMinutes: { type: Number, default: 60 },
     matchDurationSeconds: { type: Number, default: 120 },
     maxBetAmount: { type: Number, default: 10000 },
+    consolationRefundPercent: { type: Number, default: 50 },
+    referralRewardAmount: { type: Number, default: 50 },
     mpesaConsumerKey: { type: String, default: "" },
     mpesaConsumerSecret: { type: String, default: "" },
     mpesaShortCode: { type: String, default: "" },

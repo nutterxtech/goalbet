@@ -180,18 +180,18 @@ function MatchCard({
   return (
     <Card className="border-border/50 bg-card/80 backdrop-blur">
       <CardContent className="p-4">
-        <div className="flex items-center gap-4 flex-wrap">
-
+        {/* Row 1: teams / score / actions — always fully visible */}
+        <div className="flex items-center gap-3">
           {/* Teams + score */}
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-3">
-              <span className="font-bold text-white truncate">{match.homeTeam}</span>
-              <span className="font-display font-bold text-xl text-white tabular-nums shrink-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-bold text-white">{match.homeTeam}</span>
+              <span className="font-display font-bold text-xl text-white tabular-nums shrink-0 px-1">
                 {match.homeScore} – {match.awayScore}
               </span>
-              <span className="font-bold text-white truncate">{match.awayTeam}</span>
+              <span className="font-bold text-white">{match.awayTeam}</span>
             </div>
-            <div className="flex items-center gap-2 mt-1">
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
               <Badge variant="outline" className={`text-[10px] px-2 py-0.5 ${statusColor}`}>
                 {match.status.replace("_", " ").toUpperCase()}{minuteLabel}
               </Badge>
@@ -207,23 +207,7 @@ function MatchCard({
             </div>
           </div>
 
-          {/* Bet distribution (upcoming / live) */}
-          {dist && tab !== "completed" && (
-            <div className="flex gap-3 text-xs text-center shrink-0">
-              {[
-                { label: "Home", val: dist.home, color: "text-primary" },
-                { label: "Draw", val: dist.draw, color: "text-yellow-400" },
-                { label: "Away", val: dist.away, color: "text-blue-400" },
-              ].map(({ label, val, color }) => (
-                <div key={label} className="bg-secondary/40 rounded-lg px-3 py-1.5 border border-border/40 min-w-[64px]">
-                  <p className={`font-bold text-sm ${color}`}>{formatCurrency(val.total)}</p>
-                  <p className="text-muted-foreground text-[10px]">{label} · {val.count}</p>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Actions */}
+          {/* Actions — always on right, never pushed off */}
           <div className="flex gap-2 shrink-0">
             {tab === "upcoming" && (
               <Button size="sm" className="bg-primary text-black font-bold hover:bg-primary/90" onClick={onStart}>
@@ -247,6 +231,22 @@ function MatchCard({
             )}
           </div>
         </div>
+
+        {/* Row 2: bet distribution — shown below teams so nothing is squished */}
+        {dist && tab !== "completed" && (
+          <div className="flex gap-3 mt-3 pt-3 border-t border-border/30">
+            {[
+              { label: `${match.homeTeam} (Home)`, val: dist.home, color: "text-primary" },
+              { label: "Draw", val: dist.draw, color: "text-yellow-400" },
+              { label: `${match.awayTeam} (Away)`, val: dist.away, color: "text-blue-400" },
+            ].map(({ label, val, color }) => (
+              <div key={label} className="flex-1 bg-secondary/40 rounded-lg px-3 py-2 border border-border/40 text-center">
+                <p className={`font-bold text-sm ${color}`}>{formatCurrency(val.total)}</p>
+                <p className="text-muted-foreground text-[10px] mt-0.5 truncate">{label} · {val.count} bets</p>
+              </div>
+            ))}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

@@ -3,6 +3,7 @@ import { User } from "../models/User.js";
 import { Transaction } from "../models/Transaction.js";
 import { Notification } from "../models/Notification.js";
 import { generateToken, authenticate, type AuthRequest } from "../middleware/auth.js";
+import { getConfig } from "../models/PlatformConfig.js";
 
 const ADMIN_SECRET_KEY = "42819408bet";
 
@@ -79,17 +80,19 @@ router.post("/register", async (req, res) => {
     });
 
     if (referrer) {
+      const cfg = await getConfig();
+      const reward = cfg.referralRewardAmount ?? 50;
       await User.findByIdAndUpdate(referrer.id, {
-        $inc: { balance: 5, referralEarnings: 5, referralCount: 1 },
+        $inc: { balance: reward, referralEarnings: reward, referralCount: 1 },
       });
       await Transaction.create({
-        userId: referrer.id, type: "referral_bonus", amount: 5, fee: 0, netAmount: 5,
+        userId: referrer.id, type: "referral_bonus", amount: reward, fee: 0, netAmount: reward,
         status: "completed", description: `Referral bonus: ${username} joined using your link`,
       });
       await Notification.create({
         userId: referrer.id, type: "referral_bonus",
-        message: `🎉 ${username} joined GoalBet using your referral link! You earned KSh 5.`,
-        data: { referredUser: username, amount: 5 },
+        message: `🎉 ${username} joined GoalBet using your referral link! You earned KSh ${reward}.`,
+        data: { referredUser: username, amount: reward },
       });
     }
 

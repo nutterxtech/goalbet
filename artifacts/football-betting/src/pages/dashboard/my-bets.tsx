@@ -35,7 +35,7 @@ export default function MyBetsPage() {
   const { data, isLoading } = useGetUserSlips(
     {
       page: 1,
-      limit: 50,
+      limit: 10,
       ...(statusFilter !== "all" ? { status: statusFilter } : {}),
     },
     { query: { refetchInterval: 10000 } }

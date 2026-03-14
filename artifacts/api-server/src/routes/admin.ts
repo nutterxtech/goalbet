@@ -601,6 +601,9 @@ router.put("/withdrawals/:id", async (req: AuthRequest, res) => {
 
 // GET /admin/stats
 router.get("/stats", async (req: AuthRequest, res) => {
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+
   const [
     totalUsers,
     activeUsers,
@@ -613,6 +616,9 @@ router.get("/stats", async (req: AuthRequest, res) => {
     pendingWithdrawals,
     winningsAgg,
     recentBets,
+    todayBetsCount,
+    todayBetAmountAgg,
+    todayWinningsAgg,
   ] = await Promise.all([
     User.countDocuments({ role: "user" }),
     User.countDocuments({ role: "user", status: "active" }),
@@ -625,6 +631,9 @@ router.get("/stats", async (req: AuthRequest, res) => {
     Transaction.countDocuments({ type: "withdrawal", status: "pending" }),
     Transaction.aggregate([{ $match: { type: "winnings" } }, { $group: { _id: null, total: { $sum: "$amount" } } }]),
     Bet.find().populate("userId", "username").populate("matchId", "homeTeam awayTeam").sort({ createdAt: -1 }).limit(10),
+    Bet.countDocuments({ createdAt: { $gte: todayStart } }),
+    Bet.aggregate([{ $match: { createdAt: { $gte: todayStart } } }, { $group: { _id: null, total: { $sum: "$amount" } } }]),
+    Transaction.aggregate([{ $match: { type: "winnings", createdAt: { $gte: todayStart } } }, { $group: { _id: null, total: { $sum: "$amount" } } }]),
   ]);
 
   const totalBetAmount = betAmountAgg[0]?.total ?? 0;
@@ -632,6 +641,9 @@ router.get("/stats", async (req: AuthRequest, res) => {
   const totalWithdrawals = withdrawalAgg[0]?.total ?? 0;
   const totalWinningsPaid = winningsAgg[0]?.total ?? 0;
   const platformRevenue = totalBetAmount - totalWinningsPaid;
+  const todayBetAmount = todayBetAmountAgg[0]?.total ?? 0;
+  const todayWinningsPaid = todayWinningsAgg[0]?.total ?? 0;
+  const todayRevenue = todayBetAmount - todayWinningsPaid;
 
   res.json({
     totalUsers,
@@ -645,6 +657,8 @@ router.get("/stats", async (req: AuthRequest, res) => {
     pendingWithdrawals,
     platformRevenue,
     totalWinningsPaid,
+    todayBets: todayBetsCount,
+    todayRevenue,
     recentBets: recentBets.map((b) => {
       const user = b.userId as any;
       const match = b.matchId as any;
@@ -777,6 +791,8 @@ router.get("/config", async (req: AuthRequest, res) => {
     bettingWindowMinutes: config.bettingWindowMinutes,
     matchDurationSeconds: config.matchDurationSeconds,
     maxBetAmount: config.maxBetAmount,
+    consolationRefundPercent: config.consolationRefundPercent ?? 50,
+    referralRewardAmount: config.referralRewardAmount ?? 50,
     mpesaConfigured: config.mpesaConfigured,
     mpesaEnvironment: config.mpesaEnvironment,
     mpesaShortCode: config.mpesaShortCode,
@@ -790,7 +806,12 @@ router.get("/config", async (req: AuthRequest, res) => {
 // PUT /admin/config
 router.put("/config", async (req: AuthRequest, res) => {
   const config = await getConfig();
-  const fields = ["minDeposit", "minBet", "minWithdrawal", "withdrawalFeePercent", "bettingWindowMinutes", "matchDurationSeconds", "maxBetAmount", "mpesaEnvironment", "mpesaShortCode", "mpesaCallbackUrl"];
+  const fields = [
+    "minDeposit", "minBet", "minWithdrawal", "withdrawalFeePercent",
+    "bettingWindowMinutes", "matchDurationSeconds", "maxBetAmount",
+    "consolationRefundPercent", "referralRewardAmount",
+    "mpesaEnvironment", "mpesaShortCode", "mpesaCallbackUrl",
+  ];
   for (const f of fields) {
     if (req.body[f] !== undefined) (config as any)[f] = req.body[f];
   }
@@ -814,6 +835,8 @@ router.put("/config", async (req: AuthRequest, res) => {
     bettingWindowMinutes: config.bettingWindowMinutes,
     matchDurationSeconds: config.matchDurationSeconds,
     maxBetAmount: config.maxBetAmount,
+    consolationRefundPercent: config.consolationRefundPercent ?? 50,
+    referralRewardAmount: config.referralRewardAmount ?? 50,
   });
 });
 

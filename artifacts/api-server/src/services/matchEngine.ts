@@ -60,6 +60,8 @@ async function settleBets(match: IMatch, _finalHome: number, _finalAway: number)
   // Score and result are already saved on the match document before this is called.
   // We derive settlement outcome from match.result only.
   const result: "home" | "draw" | "away" = match.result as "home" | "draw" | "away";
+  const config = await getConfig();
+  const consolationRate = (config.consolationRefundPercent ?? 50) / 100;
 
   const bets = await Bet.find({ matchId: match._id, status: "pending" });
 
@@ -129,17 +131,18 @@ async function settleBets(match: IMatch, _finalHome: number, _finalAway: number)
         slip.status = "lost";
         slip.settledAt = new Date();
         await slip.save();
-        const consolation = parseFloat((slip.stake * 0.5).toFixed(2));
+        const consolation = parseFloat((slip.stake * consolationRate).toFixed(2));
+        const consolationPct = Math.round(consolationRate * 100);
         await User.findByIdAndUpdate(slip.userId, { $inc: { balance: consolation } });
         await Transaction.create({
           userId: slip.userId, type: "refund", amount: consolation, fee: 0, netAmount: consolation,
           status: "completed",
-          description: `50% consolation refund for lost slip #${slip.slipId}`,
+          description: `${consolationPct}% consolation refund for lost slip #${slip.slipId}`,
         });
         await Notification.create({
           userId: slip.userId,
           type: "bet_lost",
-          message: `❌ Slip #${slip.slipId} lost — but you've been refunded KSh ${consolation.toFixed(2)} (50% back!).`,
+          message: `❌ Slip #${slip.slipId} lost — but you've been refunded KSh ${consolation.toFixed(2)} (${consolationPct}% back!).`,
           data: { slipId: slip.slipId, consolation },
         });
       } else {
@@ -172,17 +175,18 @@ async function settleBets(match: IMatch, _finalHome: number, _finalAway: number)
         slip.status = "lost";
         slip.settledAt = new Date();
         await slip.save();
-        const consolation = parseFloat((slip.stake * 0.5).toFixed(2));
+        const consolation = parseFloat((slip.stake * consolationRate).toFixed(2));
+        const consolationPct = Math.round(consolationRate * 100);
         await User.findByIdAndUpdate(slip.userId, { $inc: { balance: consolation } });
         await Transaction.create({
           userId: slip.userId, type: "refund", amount: consolation, fee: 0, netAmount: consolation,
           status: "completed",
-          description: `50% consolation refund for lost slip #${slip.slipId}`,
+          description: `${consolationPct}% consolation refund for lost slip #${slip.slipId}`,
         });
         await Notification.create({
           userId: slip.userId,
           type: "bet_lost",
-          message: `❌ Slip #${slip.slipId} lost — but you've been refunded KSh ${consolation.toFixed(2)} (50% back!).`,
+          message: `❌ Slip #${slip.slipId} lost — but you've been refunded KSh ${consolation.toFixed(2)} (${consolationPct}% back!).`,
           data: { slipId: slip.slipId, consolation },
         });
       } else {
@@ -393,34 +397,18 @@ export async function startMatchSimulation(matchId: string, skipBettingWindow = 
         return;
       }
 
-      const goalProbability = 0.031;
-      if (Math.random() < goalProbability) {
-        const scoringTeam: "home" | "away" = Math.random() < 0.52 ? "home" : "away";
-        const player = scoringTeam === "home" ? pickRandom(homePlayers) : pickRandom(awayPlayers);
-        const teamName = scoringTeam === "home" ? matchDoc?.homeTeam : matchDoc?.awayTeam;
-
-        if (scoringTeam === "home") homeScore++;
-        else awayScore++;
-
-        events.push({
-          minute: currentMinute,
-          type: "goal",
-          team: scoringTeam,
-          player,
-          description: `⚽ GOAL! ${player} scores for ${teamName}! ${homeScore}-${awayScore}`,
-        });
-      }
-
       // ── Score steering ────────────────────────────────────────────────────
-      // At minutes 60, 75, 85: if forcedResult is set and the current score
-      // doesn't yet satisfy it, inject a real named goal event so the live
-      // ticker and the events timeline always tell a consistent story.
+      // At minutes 60, 75, 85: check if a forced result needs a steering goal.
+      // This runs FIRST so we never inject a random goal in the same minute,
+      // which would cause two goals appearing simultaneously on the ticker.
+      let steeringGoalThisMinute = false;
       if ([60, 75, 85].includes(currentMinute)) {
         const fmatch = await Match.findById(matchId);
         if (fmatch?.forcedResult) {
           const needed = fmatch.forcedResult;
           const current = determineResult(homeScore, awayScore);
           if (current !== needed) {
+            steeringGoalThisMinute = true;
             if (needed === "home" && homeScore <= awayScore) {
               const player = pickRandom(homePlayers);
               homeScore = awayScore + 1;
@@ -442,12 +430,33 @@ export async function startMatchSimulation(matchId: string, skipBettingWindow = 
                 homeScore = awayScore;
                 events.push({ minute: currentMinute, type: "goal", team: "home", player,
                   description: `⚽ GOAL! ${player} equalizes for ${matchDoc?.homeTeam}! ${homeScore}-${awayScore}` });
+              } else {
+                steeringGoalThisMinute = false; // already a draw, no goal needed
               }
             }
           }
         }
       }
       // ─────────────────────────────────────────────────────────────────────
+
+      // Random goal — skipped if a steering goal already fired this minute
+      const goalProbability = 0.031;
+      if (!steeringGoalThisMinute && Math.random() < goalProbability) {
+        const scoringTeam: "home" | "away" = Math.random() < 0.52 ? "home" : "away";
+        const player = scoringTeam === "home" ? pickRandom(homePlayers) : pickRandom(awayPlayers);
+        const teamName = scoringTeam === "home" ? matchDoc?.homeTeam : matchDoc?.awayTeam;
+
+        if (scoringTeam === "home") homeScore++;
+        else awayScore++;
+
+        events.push({
+          minute: currentMinute,
+          type: "goal",
+          team: scoringTeam,
+          player,
+          description: `⚽ GOAL! ${player} scores for ${teamName}! ${homeScore}-${awayScore}`,
+        });
+      }
 
       if (Math.random() < 0.018) {
         const cardTeam: "home" | "away" = Math.random() < 0.5 ? "home" : "away";

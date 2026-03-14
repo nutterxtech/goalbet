@@ -19,6 +19,8 @@ interface ConfigForm {
   bettingWindowMinutes: number;
   matchDurationSeconds: number;
   maxBetAmount: number;
+  consolationRefundPercent: number;
+  referralRewardAmount: number;
 }
 
 interface MpesaForm {
@@ -63,7 +65,9 @@ export default function AdminConfig() {
         bettingWindowMinutes: Number(values.bettingWindowMinutes),
         matchDurationSeconds: Number(values.matchDurationSeconds),
         maxBetAmount: Number(values.maxBetAmount),
-      });
+        consolationRefundPercent: Number(values.consolationRefundPercent),
+        referralRewardAmount: Number(values.referralRewardAmount),
+      } as any);
       queryClient.invalidateQueries();
       toast({ title: "Config updated", description: "Platform configuration saved." });
     } catch (err: any) {
@@ -96,12 +100,14 @@ export default function AdminConfig() {
 
   const fields = [
     { key: "minDeposit", label: "Minimum Deposit (KSh)", desc: "Minimum amount users can deposit" },
-    { key: "minBet", label: "Minimum Bet (KSh)", desc: "Minimum amount users can bet" },
-    { key: "maxBetAmount", label: "Maximum Bet (KSh)", desc: "Maximum amount per single bet" },
+    { key: "minBet", label: "Minimum Bet (KSh)", desc: "Minimum stake per bet slip" },
+    { key: "maxBetAmount", label: "Maximum Bet (KSh)", desc: "Maximum stake per bet slip" },
     { key: "minWithdrawal", label: "Minimum Withdrawal (KSh)", desc: "Minimum withdrawal amount" },
     { key: "withdrawalFeePercent", label: "Withdrawal Fee (%)", desc: "Platform fee on withdrawals" },
-    { key: "bettingWindowMinutes", label: "Betting Window (minutes)", desc: "How long betting is open before a match" },
-    { key: "matchDurationSeconds", label: "Match Duration (seconds)", desc: "How many real seconds a 90-minute match takes" },
+    { key: "consolationRefundPercent", label: "Consolation Refund (%)", desc: "Percentage of stake refunded when a slip loses (e.g. 50 = 50% back)" },
+    { key: "referralRewardAmount", label: "Referral Reward (KSh)", desc: "Bonus credited to a user when their referral makes their first deposit" },
+    { key: "bettingWindowMinutes", label: "Betting Window (minutes)", desc: "How long betting is open before a match starts" },
+    { key: "matchDurationSeconds", label: "Match Duration (seconds)", desc: "Real-time seconds a simulated 90-minute match takes" },
   ];
 
   const mpesaConfigured = (data as any)?.mpesaConfigured;
