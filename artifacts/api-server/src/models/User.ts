@@ -19,6 +19,7 @@ export interface IUser extends Document {
   referredBy?: string;
   referralEarnings: number;
   referralCount: number;
+  pendingConsolationWin: boolean;
   createdAt: Date;
   updatedAt: Date;
   comparePassword(password: string): Promise<boolean>;
@@ -42,6 +43,7 @@ const UserSchema = new Schema<IUser>(
     referredBy: { type: String },
     referralEarnings: { type: Number, default: 0 },
     referralCount: { type: Number, default: 0 },
+    pendingConsolationWin: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

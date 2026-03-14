@@ -106,6 +106,10 @@ async function settleBets(match: IMatch, _finalHome: number, _finalAway: number)
     await User.findByIdAndUpdate(bet.userId, { $inc: { totalBets: 1 } });
   }
 
+  // Thresholds for the "lose big → next small bet wins" mechanic
+  const BIG_LOSS_THRESHOLD = 500;   // KSh — losing a slip this large triggers consolation win
+  const SMALL_WIN_THRESHOLD = 300;  // KSh — a slip this small after a big loss auto-wins
+
   const pendingSlips = await BetSlip.find({
     "selections.matchId": match._id,
     "selections.status": "pending",
@@ -126,51 +130,80 @@ async function settleBets(match: IMatch, _finalHome: number, _finalAway: number)
     const allSettled = slip.selections.every(s => s.status !== "pending");
     const anyLost = slip.selections.some(s => s.status === "lost");
 
-    if (allSettled) {
-      if (anyLost) {
-        slip.status = "lost";
-        slip.settledAt = new Date();
-        await slip.save();
-        const consolation = parseFloat((slip.stake * consolationRate).toFixed(2));
-        const consolationPct = Math.round(consolationRate * 100);
-        await User.findByIdAndUpdate(slip.userId, { $inc: { balance: consolation } });
-        await Transaction.create({
-          userId: slip.userId, type: "refund", amount: consolation, fee: 0, netAmount: consolation,
-          status: "completed",
-          description: `${consolationPct}% consolation refund for lost slip #${slip.slipId}`,
-        });
-        await Notification.create({
-          userId: slip.userId,
-          type: "bet_lost",
-          message: `❌ Slip #${slip.slipId} lost — but you've been refunded KSh ${consolation.toFixed(2)} (${consolationPct}% back!).`,
-          data: { slipId: slip.slipId, consolation },
-        });
-      } else {
-        const winnings = parseFloat((slip.stake * slip.combinedOdds).toFixed(2));
-        slip.status = "won";
-        slip.actualWinnings = winnings;
-        slip.settledAt = new Date();
-        await slip.save();
-        await User.findByIdAndUpdate(slip.userId, {
-          $inc: { balance: winnings, totalWins: 1, totalWinnings: winnings },
-        });
-        await Transaction.create({
-          userId: slip.userId,
-          type: "winnings",
-          amount: winnings,
-          fee: 0,
-          netAmount: winnings,
-          status: "completed",
-          description: `Winnings from slip #${slip.slipId} (${slip.selections.length} selections)`,
-        });
-        await Notification.create({
-          userId: slip.userId,
-          type: "bet_won",
-          message: `🎉 Slip #${slip.slipId} WON! You won KSh ${winnings.toFixed(2)}! All ${slip.selections.length} selections correct!`,
-          data: { slipId: slip.slipId, winnings },
-        });
+    // ── Consolation win check ────────────────────────────────────────────────
+    // If this slip is fully settled and the user has a pending consolation win,
+    // and the stake is small enough, override the result and force a win.
+    let consolationWinApplied = false;
+    if (allSettled && anyLost) {
+      const userDoc = await User.findById(slip.userId);
+      if (userDoc?.pendingConsolationWin && slip.stake <= SMALL_WIN_THRESHOLD) {
+        // Force all selections to "won" and award the winnings
+        for (const sel of slip.selections) {
+          sel.status = "won";
+        }
+        consolationWinApplied = true;
+        await User.findByIdAndUpdate(slip.userId, { pendingConsolationWin: false });
+        console.log(`🎁 Consolation win applied for user ${slip.userId} on slip #${slip.slipId} (stake KSh ${slip.stake})`);
       }
-    } else {
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
+    const finallyLost = allSettled && anyLost && !consolationWinApplied;
+    const finallyWon  = allSettled && (!anyLost || consolationWinApplied);
+
+    if (finallyWon) {
+      const winnings = parseFloat((slip.stake * slip.combinedOdds).toFixed(2));
+      slip.status = "won";
+      slip.actualWinnings = winnings;
+      slip.settledAt = new Date();
+      await slip.save();
+      await User.findByIdAndUpdate(slip.userId, {
+        $inc: { balance: winnings, totalWins: 1, totalWinnings: winnings },
+      });
+      await Transaction.create({
+        userId: slip.userId,
+        type: "winnings",
+        amount: winnings,
+        fee: 0,
+        netAmount: winnings,
+        status: "completed",
+        description: `Winnings from slip #${slip.slipId} (${slip.selections.length} selections)`,
+      });
+      await Notification.create({
+        userId: slip.userId,
+        type: "bet_won",
+        message: `🎉 Slip #${slip.slipId} WON! You won KSh ${winnings.toFixed(2)}! All ${slip.selections.length} selections correct!`,
+        data: { slipId: slip.slipId, winnings },
+      });
+    } else if (finallyLost) {
+      slip.status = "lost";
+      slip.settledAt = new Date();
+      await slip.save();
+      const consolation = parseFloat((slip.stake * consolationRate).toFixed(2));
+      const consolationPct = Math.round(consolationRate * 100);
+      await User.findByIdAndUpdate(slip.userId, { $inc: { balance: consolation } });
+      await Transaction.create({
+        userId: slip.userId, type: "refund", amount: consolation, fee: 0, netAmount: consolation,
+        status: "completed",
+        description: `${consolationPct}% consolation refund for lost slip #${slip.slipId}`,
+      });
+      await Notification.create({
+        userId: slip.userId,
+        type: "bet_lost",
+        message: `❌ Slip #${slip.slipId} lost — but you've been refunded KSh ${consolation.toFixed(2)} (${consolationPct}% back!).`,
+        data: { slipId: slip.slipId, consolation },
+      });
+
+      // ── Big-loss flag ──────────────────────────────────────────────────────
+      // If the lost slip was a large stake, gift the user a consolation win
+      // on their next small slip so they stay engaged.
+      if (slip.stake >= BIG_LOSS_THRESHOLD) {
+        await User.findByIdAndUpdate(slip.userId, { pendingConsolationWin: true });
+        console.log(`🎯 Big loss detected: user ${slip.userId} lost KSh ${slip.stake} on slip #${slip.slipId} — consolation win armed`);
+      }
+      // ──────────────────────────────────────────────────────────────────────
+    } else if (!allSettled) {
+      // Slip still has pending selections — save progress, mark early loss if any
       if (anyLost) {
         slip.status = "lost";
         slip.settledAt = new Date();
@@ -189,6 +222,10 @@ async function settleBets(match: IMatch, _finalHome: number, _finalAway: number)
           message: `❌ Slip #${slip.slipId} lost — but you've been refunded KSh ${consolation.toFixed(2)} (${consolationPct}% back!).`,
           data: { slipId: slip.slipId, consolation },
         });
+        if (slip.stake >= BIG_LOSS_THRESHOLD) {
+          await User.findByIdAndUpdate(slip.userId, { pendingConsolationWin: true });
+          console.log(`🎯 Big loss detected: user ${slip.userId} lost KSh ${slip.stake} on slip #${slip.slipId} — consolation win armed`);
+        }
       } else {
         await slip.save();
       }
@@ -316,35 +353,38 @@ export async function startMatchSimulation(matchId: string, skipBettingWindow = 
         let result: "home" | "draw" | "away";
 
         if (latestMatch?.forcedResult) {
-          result = latestMatch.forcedResult;
+          const needed = latestMatch.forcedResult;
           const current = determineResult(finalHome, finalAway);
-          if (current !== result) {
-            // Steering at 60/75/85 didn't fully correct it — inject a last-second goal
-            // so the timeline still shows an event that explains the final score.
-            if (result === "home" && finalHome <= finalAway) {
+          if (current !== needed) {
+            // Steering throughout the match didn't fully close the gap.
+            // Inject ONE last-minute goal only — never jump multiple goals at once.
+            if (needed === "home" && finalHome <= finalAway) {
               const player = pickRandom(homePlayers);
-              finalHome = finalAway + 1;
+              finalHome++;
               events.push({ minute: 90, type: "goal", team: "home", player,
                 description: `⚽ GOAL! ${player} nets in injury time for ${matchDoc?.homeTeam}! ${finalHome}-${finalAway}` });
-            } else if (result === "away" && finalAway <= finalHome) {
+            } else if (needed === "away" && finalAway <= finalHome) {
               const player = pickRandom(awayPlayers);
-              finalAway = finalHome + 1;
+              finalAway++;
               events.push({ minute: 90, type: "goal", team: "away", player,
                 description: `⚽ GOAL! ${player} nets in injury time for ${matchDoc?.awayTeam}! ${finalHome}-${finalAway}` });
-            } else if (result === "draw") {
+            } else if (needed === "draw") {
               if (finalHome > finalAway) {
                 const player = pickRandom(awayPlayers);
-                finalAway = finalHome;
+                finalAway++;
                 events.push({ minute: 90, type: "goal", team: "away", player,
                   description: `⚽ GOAL! ${player} equalizes in injury time! ${finalHome}-${finalAway}` });
               } else if (finalAway > finalHome) {
                 const player = pickRandom(homePlayers);
-                finalHome = finalAway;
+                finalHome++;
                 events.push({ minute: 90, type: "goal", team: "home", player,
                   description: `⚽ GOAL! ${player} equalizes in injury time! ${finalHome}-${finalAway}` });
               }
             }
           }
+          // Settle based on what the score actually is after the final nudge.
+          // The settlement-time risk guard is the backstop if we still couldn't close a big gap.
+          result = determineResult(finalHome, finalAway);
         } else {
           result = determineResult(finalHome, finalAway);
         }
@@ -398,41 +438,47 @@ export async function startMatchSimulation(matchId: string, skipBettingWindow = 
       }
 
       // ── Score steering ────────────────────────────────────────────────────
-      // At minutes 60, 75, 85: check if a forced result needs a steering goal.
-      // This runs FIRST so we never inject a random goal in the same minute,
-      // which would cause two goals appearing simultaneously on the ticker.
+      // From minute 47 onward, check every 7 minutes whether a forced result
+      // needs a nudge.  Each check adds AT MOST ONE goal — scores only ever
+      // go up by 1, never jump.  This runs FIRST so a random goal can't fire
+      // in the same minute, preventing two simultaneous goals on the ticker.
+      // Checkpoints: 47, 54, 61, 68, 75, 82, 88
+      const STEERING_MINUTES = [47, 54, 61, 68, 75, 82, 88];
       let steeringGoalThisMinute = false;
-      if ([60, 75, 85].includes(currentMinute)) {
+      if (STEERING_MINUTES.includes(currentMinute)) {
         const fmatch = await Match.findById(matchId);
         if (fmatch?.forcedResult) {
           const needed = fmatch.forcedResult;
           const current = determineResult(homeScore, awayScore);
           if (current !== needed) {
-            steeringGoalThisMinute = true;
             if (needed === "home" && homeScore <= awayScore) {
+              // Add exactly one goal for home — never jump multiple
+              steeringGoalThisMinute = true;
+              homeScore++;
               const player = pickRandom(homePlayers);
-              homeScore = awayScore + 1;
               events.push({ minute: currentMinute, type: "goal", team: "home", player,
-                description: `⚽ GOAL! ${player} puts ${matchDoc?.homeTeam} ahead! ${homeScore}-${awayScore}` });
+                description: `⚽ GOAL! ${player} pulls one back for ${matchDoc?.homeTeam}! ${homeScore}-${awayScore}` });
             } else if (needed === "away" && awayScore <= homeScore) {
+              steeringGoalThisMinute = true;
+              awayScore++;
               const player = pickRandom(awayPlayers);
-              awayScore = homeScore + 1;
               events.push({ minute: currentMinute, type: "goal", team: "away", player,
-                description: `⚽ GOAL! ${player} puts ${matchDoc?.awayTeam} ahead! ${homeScore}-${awayScore}` });
+                description: `⚽ GOAL! ${player} pulls one back for ${matchDoc?.awayTeam}! ${homeScore}-${awayScore}` });
             } else if (needed === "draw") {
               if (homeScore > awayScore) {
+                steeringGoalThisMinute = true;
+                awayScore++;
                 const player = pickRandom(awayPlayers);
-                awayScore = homeScore;
                 events.push({ minute: currentMinute, type: "goal", team: "away", player,
-                  description: `⚽ GOAL! ${player} equalizes for ${matchDoc?.awayTeam}! ${homeScore}-${awayScore}` });
+                  description: `⚽ GOAL! ${player} pulls one back for ${matchDoc?.awayTeam}! ${homeScore}-${awayScore}` });
               } else if (awayScore > homeScore) {
+                steeringGoalThisMinute = true;
+                homeScore++;
                 const player = pickRandom(homePlayers);
-                homeScore = awayScore;
                 events.push({ minute: currentMinute, type: "goal", team: "home", player,
-                  description: `⚽ GOAL! ${player} equalizes for ${matchDoc?.homeTeam}! ${homeScore}-${awayScore}` });
-              } else {
-                steeringGoalThisMinute = false; // already a draw, no goal needed
+                  description: `⚽ GOAL! ${player} pulls one back for ${matchDoc?.homeTeam}! ${homeScore}-${awayScore}` });
               }
+              // If already level, no steering goal needed
             }
           }
         }
