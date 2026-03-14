@@ -306,22 +306,42 @@ export async function startMatchSimulation(matchId: string, skipBettingWindow = 
         clearInterval(interval);
         activeSimulations.delete(matchId);
 
-        // Fetch latest match doc to check for admin forced result
         const latestMatch = await Match.findById(matchId);
         let finalHome = homeScore;
         let finalAway = awayScore;
         let result: "home" | "draw" | "away";
 
         if (latestMatch?.forcedResult) {
-          // Admin locked a result — adjust score to be consistent, THEN save.
-          // This way the final score in DB and results page matches what will show at FT.
           result = latestMatch.forcedResult;
-          const adjusted = adjustScoreForResult(result, homeScore, awayScore);
-          finalHome = adjusted.homeScore;
-          finalAway = adjusted.awayScore;
-          console.log(`🔒 Forced result applied at FT: ${result} (${finalHome}-${finalAway})`);
+          const current = determineResult(finalHome, finalAway);
+          if (current !== result) {
+            // Steering at 60/75/85 didn't fully correct it — inject a last-second goal
+            // so the timeline still shows an event that explains the final score.
+            if (result === "home" && finalHome <= finalAway) {
+              const player = pickRandom(homePlayers);
+              finalHome = finalAway + 1;
+              events.push({ minute: 90, type: "goal", team: "home", player,
+                description: `⚽ GOAL! ${player} nets in injury time for ${matchDoc?.homeTeam}! ${finalHome}-${finalAway}` });
+            } else if (result === "away" && finalAway <= finalHome) {
+              const player = pickRandom(awayPlayers);
+              finalAway = finalHome + 1;
+              events.push({ minute: 90, type: "goal", team: "away", player,
+                description: `⚽ GOAL! ${player} nets in injury time for ${matchDoc?.awayTeam}! ${finalHome}-${finalAway}` });
+            } else if (result === "draw") {
+              if (finalHome > finalAway) {
+                const player = pickRandom(awayPlayers);
+                finalAway = finalHome;
+                events.push({ minute: 90, type: "goal", team: "away", player,
+                  description: `⚽ GOAL! ${player} equalizes in injury time! ${finalHome}-${finalAway}` });
+              } else if (finalAway > finalHome) {
+                const player = pickRandom(homePlayers);
+                finalHome = finalAway;
+                events.push({ minute: 90, type: "goal", team: "home", player,
+                  description: `⚽ GOAL! ${player} equalizes in injury time! ${finalHome}-${finalAway}` });
+              }
+            }
+          }
         } else {
-          // Natural result — exactly what the live ticker showed
           result = determineResult(finalHome, finalAway);
         }
 
@@ -390,6 +410,44 @@ export async function startMatchSimulation(matchId: string, skipBettingWindow = 
           description: `⚽ GOAL! ${player} scores for ${teamName}! ${homeScore}-${awayScore}`,
         });
       }
+
+      // ── Score steering ────────────────────────────────────────────────────
+      // At minutes 60, 75, 85: if forcedResult is set and the current score
+      // doesn't yet satisfy it, inject a real named goal event so the live
+      // ticker and the events timeline always tell a consistent story.
+      if ([60, 75, 85].includes(currentMinute)) {
+        const fmatch = await Match.findById(matchId);
+        if (fmatch?.forcedResult) {
+          const needed = fmatch.forcedResult;
+          const current = determineResult(homeScore, awayScore);
+          if (current !== needed) {
+            if (needed === "home" && homeScore <= awayScore) {
+              const player = pickRandom(homePlayers);
+              homeScore = awayScore + 1;
+              events.push({ minute: currentMinute, type: "goal", team: "home", player,
+                description: `⚽ GOAL! ${player} puts ${matchDoc?.homeTeam} ahead! ${homeScore}-${awayScore}` });
+            } else if (needed === "away" && awayScore <= homeScore) {
+              const player = pickRandom(awayPlayers);
+              awayScore = homeScore + 1;
+              events.push({ minute: currentMinute, type: "goal", team: "away", player,
+                description: `⚽ GOAL! ${player} puts ${matchDoc?.awayTeam} ahead! ${homeScore}-${awayScore}` });
+            } else if (needed === "draw") {
+              if (homeScore > awayScore) {
+                const player = pickRandom(awayPlayers);
+                awayScore = homeScore;
+                events.push({ minute: currentMinute, type: "goal", team: "away", player,
+                  description: `⚽ GOAL! ${player} equalizes for ${matchDoc?.awayTeam}! ${homeScore}-${awayScore}` });
+              } else if (awayScore > homeScore) {
+                const player = pickRandom(homePlayers);
+                homeScore = awayScore;
+                events.push({ minute: currentMinute, type: "goal", team: "home", player,
+                  description: `⚽ GOAL! ${player} equalizes for ${matchDoc?.homeTeam}! ${homeScore}-${awayScore}` });
+              }
+            }
+          }
+        }
+      }
+      // ─────────────────────────────────────────────────────────────────────
 
       if (Math.random() < 0.018) {
         const cardTeam: "home" | "away" = Math.random() < 0.5 ? "home" : "away";
