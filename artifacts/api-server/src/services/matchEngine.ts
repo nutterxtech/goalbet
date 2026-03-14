@@ -291,6 +291,15 @@ export async function analyzeAndProtect(matchId: string): Promise<void> {
 export async function startMatchSimulation(matchId: string, skipBettingWindow = false): Promise<void> {
   if (activeSimulations.has(matchId)) return;
 
+  // ── Reserve the slot IMMEDIATELY before any async gap ────────────────────
+  // This prevents a second concurrent call from passing the check above while
+  // this call is suspended on the betting-window await (which can be minutes).
+  // We store a dummy timer now and replace it with the real interval later.
+  const placeholder = setTimeout(() => {}, 2_147_483_647);
+  activeSimulations.set(matchId, placeholder);
+  // ─────────────────────────────────────────────────────────────────────────
+
+  try {
   const config = await getConfig();
 
   const matchBefore = await Match.findById(matchId);
@@ -302,7 +311,11 @@ export async function startMatchSimulation(matchId: string, skipBettingWindow = 
     });
     await new Promise((resolve) => setTimeout(resolve, config.bettingWindowMinutes * 60 * 1000));
     const matchAfter = await Match.findById(matchId);
-    if (!matchAfter || matchAfter.status !== "betting_open") return;
+    if (!matchAfter || matchAfter.status !== "betting_open") {
+      clearTimeout(placeholder);
+      activeSimulations.delete(matchId);
+      return;
+    }
   }
 
   const totalDuration = config.matchDurationSeconds * 1000;
@@ -310,31 +323,50 @@ export async function startMatchSimulation(matchId: string, skipBettingWindow = 
   // Halftime pause = ~5 real seconds (or 6% of total duration, whichever is greater)
   const halftimePauseDuration = Math.max(5000, totalDuration * 0.06);
 
-  let currentMinute = 0;
-  let homeScore = 0;
-  let awayScore = 0;
-  let halftimePaused = false;
-  const events: IMatch["events"] = [];
-
+  // Fetch the latest match state — used both for team data and to detect resume
   const matchDoc = await Match.findById(matchId);
-  const homeTeamData = matchDoc ? getTeamData(matchDoc.homeTeam) : null;
-  const awayTeamData = matchDoc ? getTeamData(matchDoc.awayTeam) : null;
+  if (!matchDoc) {
+    clearTimeout(placeholder);
+    activeSimulations.delete(matchId);
+    return;
+  }
+
+  // ── Resume vs fresh start ────────────────────────────────────────────────
+  // If the match is already "live" (e.g., the scheduler raced with recovery,
+  // or this was called a second time before the first could finish), we pick
+  // up from the current DB score so goals already recorded are NOT wiped out.
+  const resumingLive = matchDoc.status === "live";
+  let currentMinute = resumingLive ? (matchDoc.minute ?? 0) : 0;
+  let homeScore    = resumingLive ? (matchDoc.homeScore ?? 0) : 0;
+  let awayScore    = resumingLive ? (matchDoc.awayScore ?? 0) : 0;
+  let halftimePaused = false;
+  const events: IMatch["events"] = resumingLive ? [...(matchDoc.events ?? [])] : [];
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const homeTeamData = getTeamData(matchDoc.homeTeam);
+  const awayTeamData = getTeamData(matchDoc.awayTeam);
 
   const homePlayers = homeTeamData ? getForwardsAndMidfielders(homeTeamData) : ["Player A", "Player B", "Player C"];
   const awayPlayers = awayTeamData ? getForwardsAndMidfielders(awayTeamData) : ["Player X", "Player Y", "Player Z"];
   const homeDefenders = homeTeamData?.players.filter(p => p.position === "DEF").map(p => p.name) || ["Defender"];
   const awayDefenders = awayTeamData?.players.filter(p => p.position === "DEF").map(p => p.name) || ["Defender"];
 
-  await Match.findByIdAndUpdate(matchId, {
-    status: "live",
-    startedAt: new Date(),
-    minute: 0,
-    homeScore: 0,
-    awayScore: 0,
-    events: [{ minute: 0, type: "kickoff", team: "home", description: `⚽ Kick off! ${matchDoc?.homeTeam} vs ${matchDoc?.awayTeam}` }],
-  });
+  if (!resumingLive) {
+    // Fresh start only — never reset a match that already has live score data
+    const kickoff = { minute: 0, type: "kickoff" as const, team: "home" as const,
+      description: `⚽ Kick off! ${matchDoc.homeTeam} vs ${matchDoc.awayTeam}` };
+    events.push(kickoff);
+    await Match.findByIdAndUpdate(matchId, {
+      status: "live",
+      startedAt: new Date(),
+      minute: 0,
+      homeScore: 0,
+      awayScore: 0,
+      events,
+    });
+  }
 
-  // Run exposure check at kickoff — catches any bets placed during the betting window
+  // Run exposure check at kickoff (or resume) — catches bets placed during betting window
   analyzeAndProtect(matchId).catch(console.error);
 
   const interval = setInterval(async () => {
@@ -563,7 +595,16 @@ export async function startMatchSimulation(matchId: string, skipBettingWindow = 
     }
   }, updateInterval);
 
+  // Replace the placeholder with the real interval
+  clearTimeout(placeholder);
   activeSimulations.set(matchId, interval);
+
+  } catch (err) {
+    // On any startup error, release the reservation so recovery can handle it
+    clearTimeout(placeholder);
+    activeSimulations.delete(matchId);
+    console.error(`startMatchSimulation error for ${matchId}:`, err);
+  }
 }
 
 export function stopMatchSimulation(matchId: string): void {
@@ -590,6 +631,8 @@ export async function openBettingWindow(matchId: string): Promise<void> {
 
 export function startAutoScheduler(): void {
   if (autoSchedulerTimer) return;
+  // Set a provisional guard immediately so concurrent calls can't double-start
+  autoSchedulerTimer = setTimeout(() => {}, 2_147_483_647);
 
   // On startup: complete any matches that were live before the server restarted.
   // Their simulation timers were lost — settle them with the score they had at restart
@@ -612,7 +655,15 @@ export function startAutoScheduler(): void {
       }
     }
   }
-  recoverOrphanedMatches().catch(console.error);
+  // Recovery MUST complete before the scheduler runs, otherwise the scheduler
+  // can count orphaned "live" matches and skip boosting, or worse race-start
+  // simulations that recovery is about to complete.
+  recoverOrphanedMatches().catch(console.error).finally(() => {
+    clearTimeout(autoSchedulerTimer!);
+    runScheduler();
+    autoSchedulerTimer = setInterval(runScheduler, 30 * 1000);
+    console.log("⏰ Match auto-scheduler started (30s interval)");
+  });
 
   async function runScheduler() {
     try {
@@ -714,10 +765,6 @@ export function startAutoScheduler(): void {
       console.error("Auto-scheduler error:", err);
     }
   }
-
-  runScheduler();
-  autoSchedulerTimer = setInterval(runScheduler, 30 * 1000);
-  console.log("⏰ Match auto-scheduler started (30s interval)");
 
   // Purge notifications older than 24 hours — runs once on startup then every hour
   async function purgeOldNotifications() {
