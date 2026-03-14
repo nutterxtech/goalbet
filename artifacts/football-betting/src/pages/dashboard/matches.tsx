@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { UserLayout } from "@/components/layout/UserLayout";
 import { 
   useGetMatches, 
+  useGetUserBets,
   usePlaceBet,
   MatchResponse,
   GetMatchesStatus
@@ -12,10 +13,11 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Loader2, Clock, CheckCircle2 } from "lucide-react";
+import { Loader2, Clock, CheckCircle2, XCircle, Receipt } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency, formatRelativeTime, formatDate } from "@/lib/format";
 import { useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/use-auth";
 
 function Countdown({ targetDate, label = "" }: { targetDate: string; label?: string }) {
   const [timeLeft, setTimeLeft] = useState<string>("");
@@ -46,12 +48,33 @@ function Countdown({ targetDate, label = "" }: { targetDate: string; label?: str
 
 export default function MatchesPage() {
   const [activeTab, setActiveTab] = useState<GetMatchesStatus>("upcoming");
-  
-  // Refetch live matches every 3 seconds
+  const { isAuthenticated } = useAuth();
+
   const { data, isLoading } = useGetMatches(
     { status: activeTab }, 
     { query: { refetchInterval: activeTab === 'live' ? 3000 : 15000 } }
   );
+
+  // Fetch user's bets to know which matches they've already bet on
+  const { data: userBetsData } = useGetUserBets(
+    { page: 1, limit: 200 },
+    { query: { enabled: isAuthenticated, refetchInterval: 15000 } }
+  );
+
+  // Map of matchId → bet (for quick lookup)
+  const userBetMap = new Map<string, typeof userBetsData extends { bets: infer B } ? B[0] : never>();
+  if (userBetsData?.bets) {
+    for (const bet of userBetsData.bets) {
+      userBetMap.set(bet.matchId, bet as any);
+    }
+  }
+
+  // In results tab, only show matches the user actually bet on
+  const matches = activeTab === 'completed' && isAuthenticated
+    ? (data?.matches ?? []).filter(m => userBetMap.has(m.id))
+    : (data?.matches ?? []);
+
+  const isEmpty = !isLoading && (matches.length === 0);
 
   return (
     <UserLayout>
@@ -82,15 +105,23 @@ export default function MatchesPage() {
             <div className="flex justify-center items-center h-64">
               <Loader2 className="w-8 h-8 animate-spin text-primary" />
             </div>
-          ) : data?.matches.length === 0 ? (
+          ) : isEmpty ? (
             <div className="flex flex-col items-center justify-center h-64 bg-card/50 border border-dashed border-border rounded-2xl">
               <Clock className="w-12 h-12 text-muted-foreground/50 mb-4" />
-              <p className="text-lg font-medium text-muted-foreground">No {activeTab} matches found.</p>
+              <p className="text-lg font-medium text-muted-foreground">
+                {activeTab === 'completed' && isAuthenticated
+                  ? "No results found for your bets yet."
+                  : `No ${activeTab} matches found.`}
+              </p>
             </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-              {data?.matches.map(match => (
-                <MatchCard key={match.id} match={match} />
+              {matches.map(match => (
+                <MatchCard 
+                  key={match.id} 
+                  match={match} 
+                  userBet={userBetMap.get(match.id) as any}
+                />
               ))}
             </div>
           )}
@@ -100,12 +131,32 @@ export default function MatchesPage() {
   );
 }
 
-function MatchCard({ match }: { match: MatchResponse }) {
+interface UserBet {
+  matchId: string;
+  outcome: string;
+  amount: number;
+  odds: number;
+  potentialWinnings: number;
+  status: string;
+  actualWinnings?: number;
+}
+
+function MatchCard({ match, userBet }: { match: MatchResponse; userBet?: UserBet }) {
   const [betModalOpen, setBetModalOpen] = useState(false);
+  const [betslipOpen, setBetslipOpen] = useState(false);
+  const [lastBet, setLastBet] = useState<{ outcome: string; amount: number; odds: number; potentialWinnings: number } | null>(null);
+  const { isAuthenticated } = useAuth();
   
   const isLive = match.status === 'live';
   const isCompleted = match.status === 'completed';
-  const canBet = match.status === 'upcoming' || match.status === 'betting_open';
+  const canBet = (match.status === 'upcoming' || match.status === 'betting_open') && isAuthenticated;
+  const alreadyBet = !!userBet;
+
+  const handleBetSuccess = (betData: { outcome: string; amount: number; odds: number; potentialWinnings: number }) => {
+    setLastBet(betData);
+    setBetModalOpen(false);
+    setBetslipOpen(true);
+  };
 
   return (
     <>
@@ -157,7 +208,6 @@ function MatchCard({ match }: { match: MatchResponse }) {
               </div>
             </div>
 
-            {/* Last event snippet for live matches */}
             {isLive && match.events && match.events.length > 0 && (
               <div className="mb-4 text-center">
                 <p className="text-xs text-primary animate-pulse truncate px-4">
@@ -166,16 +216,18 @@ function MatchCard({ match }: { match: MatchResponse }) {
               </div>
             )}
 
-            {/* Odds / Bet Action */}
             <div className="grid grid-cols-3 gap-2 mt-2">
               {['home', 'draw', 'away'].map((outcome) => {
                 const oddValue = match.odds[outcome as keyof typeof match.odds];
                 const isWinner = isCompleted && match.result === outcome;
+                const isMyPick = alreadyBet && userBet?.outcome === outcome;
                 
                 return (
                   <div key={outcome} className={`
                     p-2 rounded-lg text-center border transition-all
-                    ${isWinner ? 'bg-primary/20 border-primary text-primary' : 'bg-background border-border/50'}
+                    ${isWinner ? 'bg-primary/20 border-primary text-primary' : 
+                      isMyPick ? 'bg-secondary/60 border-muted-foreground/40' : 
+                      'bg-background border-border/50'}
                   `}>
                     <span className="block text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">
                       {outcome === 'home' ? '1' : outcome === 'draw' ? 'X' : '2'}
@@ -183,17 +235,57 @@ function MatchCard({ match }: { match: MatchResponse }) {
                     <span className={`font-bold ${isWinner ? 'text-primary' : 'text-white'}`}>
                       {oddValue.toFixed(2)}
                     </span>
+                    {isMyPick && (
+                      <span className="block text-[9px] text-muted-foreground mt-0.5">Your pick</span>
+                    )}
                   </div>
                 );
               })}
             </div>
 
-            {canBet && (
+            {/* User bet result indicator for completed matches */}
+            {isCompleted && alreadyBet && (
+              <div className={`mt-4 flex items-center justify-center gap-2 p-3 rounded-xl border ${
+                userBet?.status === 'won' 
+                  ? 'bg-green-500/10 border-green-500/30 text-green-400' 
+                  : 'bg-red-500/10 border-red-500/30 text-red-400'
+              }`}>
+                {userBet?.status === 'won' ? (
+                  <>
+                    <CheckCircle2 className="w-5 h-5 shrink-0" />
+                    <div className="text-sm font-semibold">
+                      You won {formatCurrency(userBet?.actualWinnings ?? 0)}!
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <XCircle className="w-5 h-5 shrink-0" />
+                    <div className="text-sm font-semibold">
+                      Lost — {formatCurrency(userBet?.amount ?? 0)} stake
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {canBet && !alreadyBet && (
               <Button 
                 onClick={() => setBetModalOpen(true)} 
                 className="w-full mt-4 bg-primary text-primary-foreground hover:bg-primary/90 font-bold"
               >
                 Place Bet
+              </Button>
+            )}
+
+            {canBet && alreadyBet && (
+              <Button 
+                variant="outline"
+                onClick={() => setBetslipOpen(true)}
+                className="w-full mt-4 border-primary/30 text-primary/70 cursor-default"
+                disabled
+              >
+                <Receipt className="w-4 h-4 mr-2" />
+                Bet Placed
               </Button>
             )}
           </div>
@@ -203,13 +295,33 @@ function MatchCard({ match }: { match: MatchResponse }) {
       <BetModal 
         match={match} 
         open={betModalOpen} 
-        onOpenChange={setBetModalOpen} 
+        onOpenChange={setBetModalOpen}
+        onSuccess={handleBetSuccess}
       />
+
+      {lastBet && (
+        <BetSlipModal
+          match={match}
+          bet={lastBet}
+          open={betslipOpen}
+          onOpenChange={setBetslipOpen}
+        />
+      )}
     </>
   );
 }
 
-function BetModal({ match, open, onOpenChange }: { match: MatchResponse, open: boolean, onOpenChange: (open: boolean) => void }) {
+function BetModal({ 
+  match, 
+  open, 
+  onOpenChange,
+  onSuccess
+}: { 
+  match: MatchResponse; 
+  open: boolean; 
+  onOpenChange: (open: boolean) => void;
+  onSuccess: (bet: { outcome: string; amount: number; odds: number; potentialWinnings: number }) => void;
+}) {
   const [outcome, setOutcome] = useState<'home' | 'draw' | 'away'>('home');
   const [amount, setAmount] = useState<string>("50");
   const { toast } = useToast();
@@ -218,10 +330,10 @@ function BetModal({ match, open, onOpenChange }: { match: MatchResponse, open: b
   const betMutation = usePlaceBet({
     mutation: {
       onSuccess: () => {
-        toast({ title: "Bet placed successfully!", variant: "default" });
         queryClient.invalidateQueries({ queryKey: ["/api/user/balance"] });
         queryClient.invalidateQueries({ queryKey: ["/api/user/bets"] });
-        onOpenChange(false);
+        queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+        onSuccess({ outcome, amount: parseFloat(amount), odds: match.odds[outcome], potentialWinnings: parseFloat(amount) * match.odds[outcome] });
       },
       onError: (err: any) => {
         toast({ title: "Failed to place bet", description: err.message, variant: "destructive" });
@@ -308,6 +420,74 @@ function BetModal({ match, open, onOpenChange }: { match: MatchResponse, open: b
             className="w-full h-14 text-lg font-bold text-primary-foreground bg-primary hover:bg-primary/90"
           >
             {betMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <><CheckCircle2 className="w-5 h-5 mr-2" /> Confirm Bet</>}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function BetSlipModal({
+  match,
+  bet,
+  open,
+  onOpenChange
+}: {
+  match: MatchResponse;
+  bet: { outcome: string; amount: number; odds: number; potentialWinnings: number };
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const outcomeLabel = bet.outcome === 'home' ? `${match.homeTeam} Win` : bet.outcome === 'away' ? `${match.awayTeam} Win` : 'Draw';
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-sm border-primary/30 bg-card">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-primary">
+            <Receipt className="w-5 h-5" /> Bet Slip
+          </DialogTitle>
+          <DialogDescription>Your bet has been confirmed.</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2">
+          {/* Match */}
+          <div className="bg-secondary/40 rounded-xl p-4 border border-border/50 text-center">
+            <p className="text-xs text-muted-foreground mb-1 uppercase tracking-widest">Match</p>
+            <p className="font-bold text-white">{match.homeTeam} vs {match.awayTeam}</p>
+            {match.scheduledAt && (
+              <p className="text-xs text-muted-foreground mt-1">
+                <Countdown targetDate={match.scheduledAt} label="Starts in " />
+              </p>
+            )}
+          </div>
+
+          {/* Bet Details */}
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Selection</span>
+              <span className="font-bold text-white uppercase">{outcomeLabel}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Odds</span>
+              <span className="font-bold text-white">{bet.odds.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-sm border-t border-border/50 pt-2">
+              <span className="text-muted-foreground">Stake</span>
+              <span className="font-bold text-destructive">-{formatCurrency(bet.amount)}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Potential Win</span>
+              <span className="text-xl font-display font-black text-primary">{formatCurrency(bet.potentialWinnings)}</span>
+            </div>
+          </div>
+
+          <div className="bg-primary/5 border border-primary/20 rounded-xl p-3 text-xs text-center text-muted-foreground">
+            Good luck! Your winnings will be credited automatically when the match ends.
+          </div>
+
+          <Button className="w-full" onClick={() => onOpenChange(false)}>
+            Done
           </Button>
         </div>
       </DialogContent>

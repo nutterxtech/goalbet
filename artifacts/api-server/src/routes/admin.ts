@@ -461,6 +461,24 @@ router.post("/matches/:id/open-betting", async (req: AuthRequest, res) => {
   });
 });
 
+// GET /admin/matches/:id/bet-distribution
+router.get("/matches/:id/bet-distribution", async (req: AuthRequest, res) => {
+  try {
+    const matchId = req.params.id;
+    const agg = await Bet.aggregate([
+      { $match: { matchId: new (await import("mongoose")).default.Types.ObjectId(matchId), status: "pending" } },
+      { $group: { _id: "$outcome", total: { $sum: "$amount" }, count: { $sum: 1 } } },
+    ]);
+    const dist: Record<string, { total: number; count: number }> = { home: { total: 0, count: 0 }, draw: { total: 0, count: 0 }, away: { total: 0, count: 0 } };
+    for (const row of agg) {
+      if (row._id in dist) dist[row._id] = { total: row.total, count: row.count };
+    }
+    res.json(dist);
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 // GET /admin/withdrawals
 router.get("/withdrawals", async (req: AuthRequest, res) => {
   const page = Number(req.query.page) || 1;

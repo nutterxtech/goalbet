@@ -34,6 +34,8 @@ export default function AdminSecretLogin() {
       if (!res.ok) throw new Error(data.message || "Authentication failed");
 
       localStorage.setItem("goalbet_token", data.token);
+      // Mark that admin accessed via the secret URL
+      sessionStorage.setItem("goalbet_admin_unlocked", "1");
       toast({ title: "Admin access granted", description: `Welcome, ${data.user.username}` });
       setTimeout(() => setLocation("/admin"), 500);
     } catch (err: any) {

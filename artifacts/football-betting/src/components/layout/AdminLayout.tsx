@@ -22,12 +22,14 @@ export function AdminLayout({ children }: { children: ReactNode }) {
   const [location] = useLocation();
   const { isAdmin } = useAuth();
 
-  if (!isAdmin) {
+  const adminUnlocked = sessionStorage.getItem("goalbet_admin_unlocked") === "1";
+
+  if (!isAdmin || !adminUnlocked) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center text-center p-4">
         <ShieldAlert className="h-16 w-16 text-destructive mb-4" />
         <h1 className="text-2xl font-bold mb-2">Access Denied</h1>
-        <p className="text-muted-foreground mb-6">You do not have permission to view this area.</p>
+        <p className="text-muted-foreground mb-6">Admin access requires authentication through the secure portal.</p>
         <Link href="/dashboard" className="text-primary hover:underline">Return to Dashboard</Link>
       </div>
     );

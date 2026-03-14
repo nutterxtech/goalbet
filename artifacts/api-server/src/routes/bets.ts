@@ -47,6 +47,13 @@ router.post("/", async (req: AuthRequest, res) => {
       return;
     }
 
+    // Prevent duplicate bets on the same match
+    const existingBet = await Bet.findOne({ userId: req.user!.id, matchId });
+    if (existingBet) {
+      res.status(400).json({ message: "You have already placed a bet on this match" });
+      return;
+    }
+
     const user = await User.findById(req.user!.id);
     if (!user || user.balance < amount) {
       res.status(400).json({ message: "Insufficient balance" });
@@ -68,11 +75,11 @@ router.post("/", async (req: AuthRequest, res) => {
       potentialWinnings,
     });
 
-    // Record bet transaction
+    // Record bet transaction (negative = money out of wallet)
     await Transaction.create({
       userId: req.user!.id,
       type: "bet",
-      amount,
+      amount: -amount,
       fee: 0,
       netAmount: -amount,
       status: "completed",

@@ -58,11 +58,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         description: "Login successful.",
       });
       
-      if (res.user.role === 'admin') {
-        setLocation("/admin");
-      } else {
-        setLocation("/dashboard");
-      }
+      // Regular login always goes to dashboard — admin panel requires special URL
+      setLocation("/dashboard");
     } catch (err: any) {
       toast({
         title: "Login failed",
@@ -98,6 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = (redirect = true) => {
     localStorage.removeItem("goalbet_token");
+    sessionStorage.removeItem("goalbet_admin_unlocked");
     setToken(null);
     queryClient.clear();
     if (redirect) {
