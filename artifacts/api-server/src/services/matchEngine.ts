@@ -536,6 +536,29 @@ export async function openBettingWindow(matchId: string): Promise<void> {
 export function startAutoScheduler(): void {
   if (autoSchedulerTimer) return;
 
+  // On startup: complete any matches that were live before the server restarted.
+  // Their simulation timers were lost — settle them with the score they had at restart
+  // so their teams are freed up for new matches immediately.
+  async function recoverOrphanedMatches() {
+    const liveDocs = await Match.find({ status: "live" });
+    for (const match of liveDocs) {
+      if (activeSimulations.has(match.id)) continue; // already running — skip
+      const finalHome = match.homeScore ?? 0;
+      const finalAway = match.awayScore ?? 0;
+      const result = determineResult(finalHome, finalAway);
+      const completed = await Match.findByIdAndUpdate(
+        match._id,
+        { status: "completed", minute: 90, result, completedAt: new Date() },
+        { new: true }
+      );
+      if (completed) {
+        await settleBets(completed, finalHome, finalAway).catch(console.error);
+        console.log(`🔄 Recovered orphaned match: ${match.homeTeam} vs ${match.awayTeam} → ${result} (${finalHome}-${finalAway})`);
+      }
+    }
+  }
+  recoverOrphanedMatches().catch(console.error);
+
   async function runScheduler() {
     try {
       // Backfill scheduledAt for upcoming matches without one
@@ -557,10 +580,10 @@ export function startAutoScheduler(): void {
         startMatchSimulation(match.id, true).catch(console.error);
       }
 
-      // Maintain minimum 5 live matches
+      // Maintain 3–6 live matches (natural range — boost only when below 3)
       const liveCount = await Match.countDocuments({ status: "live" });
-      if (liveCount < 5) {
-        const need = 5 - liveCount;
+      if (liveCount < 3) {
+        const need = 3 - liveCount;
         const nextUp = await Match.find({ status: "upcoming" })
           .sort({ scheduledAt: 1 })
           .limit(need);
@@ -572,7 +595,7 @@ export function startAutoScheduler(): void {
         }
       }
 
-      // Maintain 5-8 upcoming matches
+      // Maintain 5–8 upcoming matches (replenish when below 5, target 6–8)
       const upcomingCount = await Match.countDocuments({
         status: { $in: ["upcoming", "betting_open"] },
       });
@@ -640,6 +663,21 @@ export function startAutoScheduler(): void {
   runScheduler();
   autoSchedulerTimer = setInterval(runScheduler, 30 * 1000);
   console.log("⏰ Match auto-scheduler started (30s interval)");
+
+  // Purge notifications older than 24 hours — runs once on startup then every hour
+  async function purgeOldNotifications() {
+    try {
+      const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const { deletedCount } = await Notification.deleteMany({ createdAt: { $lt: cutoff } });
+      if (deletedCount && deletedCount > 0) {
+        console.log(`🗑️ Purged ${deletedCount} notifications older than 24h`);
+      }
+    } catch (err) {
+      console.error("Notification purge error:", err);
+    }
+  }
+  purgeOldNotifications();
+  setInterval(purgeOldNotifications, 60 * 60 * 1000); // every hour
 }
 
 export function stopAutoScheduler(): void {

@@ -334,12 +334,21 @@ router.get("/bets", async (req: AuthRequest, res) => {
   });
 });
 
-// GET /user/notifications
+// GET /user/notifications — only returns notifications from the last 24 hours
 router.get("/notifications", async (req: AuthRequest, res) => {
-  const notifications = await Notification.find({ userId: req.user!.id })
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const notifications = await Notification.find({
+    userId: req.user!.id,
+    createdAt: { $gte: cutoff },
+  })
     .sort({ createdAt: -1 })
     .limit(50);
-  const unreadCount = await Notification.countDocuments({ userId: req.user!.id, read: false });
+
+  const unreadCount = await Notification.countDocuments({
+    userId: req.user!.id,
+    read: false,
+    createdAt: { $gte: cutoff },
+  });
 
   res.json({
     notifications: notifications.map((n) => ({

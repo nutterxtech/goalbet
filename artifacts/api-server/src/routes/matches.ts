@@ -8,10 +8,19 @@ const router = Router();
 router.get("/", optionalAuth, async (req, res) => {
   try {
     const { status } = req.query;
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
     const filter: Record<string, unknown> = {};
     if (status) filter.status = status;
 
-    const matches = await Match.find(filter).sort({ createdAt: -1 }).limit(50);
+    // Completed matches sort newest-first; others sort by scheduled time
+    const sort = status === "completed"
+      ? { completedAt: -1 as const }
+      : { scheduledAt: 1 as const };
+
+    const [matches, total] = await Promise.all([
+      Match.find(filter).sort(sort).limit(limit),
+      Match.countDocuments(filter),
+    ]);
 
     res.json({
       matches: matches.map((m) => ({
@@ -32,7 +41,7 @@ router.get("/", optionalAuth, async (req, res) => {
         totalBets: m.totalBets,
         totalBetAmount: m.totalBetAmount,
       })),
-      total: matches.length,
+      total,
     });
   } catch (err) {
     res.status(500).json({ message: "Server error" });

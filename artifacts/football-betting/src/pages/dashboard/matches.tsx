@@ -55,7 +55,7 @@ export default function MatchesPage() {
   const { isAuthenticated } = useAuth();
 
   const { data, isLoading } = useGetMatches(
-    { status: activeTab },
+    { status: activeTab, limit: activeTab === "completed" ? 8 : 50 },
     { query: { refetchInterval: activeTab === "live" ? 3000 : 15000 } }
   );
 
