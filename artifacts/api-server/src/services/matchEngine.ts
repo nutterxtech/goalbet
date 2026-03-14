@@ -35,82 +35,31 @@ function pickRandom<T>(arr: T[]): T {
 }
 
 /**
- * Auto-balance: if paying the natural winner would cost the platform more than collected,
- * override both the result and the score to protect platform without revealing manipulation.
+ * Adjust score to be consistent with the desired result.
+ * Returns the (possibly tweaked) home/away scores.
  */
-async function autoBalanceResult(
-  match: IMatch,
+function adjustScoreForResult(
+  desired: "home" | "draw" | "away",
   homeScore: number,
   awayScore: number
-): Promise<{ result: "home" | "draw" | "away"; homeScore: number; awayScore: number }> {
-  const result = match.result!;
-  const bets = await Bet.find({ matchId: match._id, status: "pending" });
-
-  const collected = bets.reduce((sum, b) => sum + b.amount, 0);
-  const payoutByOutcome: Record<"home" | "draw" | "away", number> = { home: 0, draw: 0, away: 0 };
-  for (const bet of bets) {
-    payoutByOutcome[bet.outcome] += bet.amount * bet.odds;
+): { homeScore: number; awayScore: number } {
+  if (desired === "draw") {
+    const eq = Math.min(homeScore, awayScore);
+    return { homeScore: eq, awayScore: eq };
   }
-
-  if (payoutByOutcome[result] > collected * 0.88) {
-    const minOutcome = (Object.keys(payoutByOutcome) as ("home" | "draw" | "away")[])
-      .sort((a, b) => payoutByOutcome[a] - payoutByOutcome[b])[0];
-
-    if (minOutcome !== result) {
-      console.log(`⚖️ Auto-balance: overriding ${result} → ${minOutcome}`);
-
-      let newHome = homeScore;
-      let newAway = awayScore;
-
-      if (minOutcome === "draw") {
-        const eq = Math.min(newHome, newAway);
-        newHome = eq;
-        newAway = eq;
-      } else if (minOutcome === "home" && newHome <= newAway) {
-        newHome = newAway + 1;
-      } else if (minOutcome === "away" && newAway <= newHome) {
-        newAway = newHome + 1;
-      }
-
-      await Match.findByIdAndUpdate(match._id, {
-        result: minOutcome,
-        homeScore: newHome,
-        awayScore: newAway,
-      });
-      return { result: minOutcome, homeScore: newHome, awayScore: newAway };
-    }
+  if (desired === "home" && homeScore <= awayScore) {
+    return { homeScore: awayScore + 1, awayScore };
   }
-  return { result, homeScore, awayScore };
+  if (desired === "away" && awayScore <= homeScore) {
+    return { homeScore, awayScore: homeScore + 1 };
+  }
+  return { homeScore, awayScore };
 }
 
-async function settleBets(match: IMatch, finalHome: number, finalAway: number) {
-  let result: "home" | "draw" | "away";
-  let finalHomeScore = finalHome;
-  let finalAwayScore = finalAway;
-
-  if (match.forcedResult) {
-    result = match.forcedResult;
-    if (result === "draw") {
-      const eq = Math.min(finalHome, finalAway);
-      finalHomeScore = eq;
-      finalAwayScore = eq;
-    } else if (result === "home" && finalHome <= finalAway) {
-      finalHomeScore = finalAway + 1;
-    } else if (result === "away" && finalAway <= finalHome) {
-      finalAwayScore = finalHome + 1;
-    }
-    await Match.findByIdAndUpdate(match._id, {
-      result,
-      homeScore: finalHomeScore,
-      awayScore: finalAwayScore,
-    });
-    console.log(`🔒 Forced result applied: ${result} (${finalHomeScore}-${finalAwayScore})`);
-  } else {
-    const balanced = await autoBalanceResult(match, finalHome, finalAway);
-    result = balanced.result;
-    finalHomeScore = balanced.homeScore;
-    finalAwayScore = balanced.awayScore;
-  }
+async function settleBets(match: IMatch, _finalHome: number, _finalAway: number) {
+  // Score and result are already saved on the match document before this is called.
+  // We derive settlement outcome from match.result only.
+  const result: "home" | "draw" | "away" = match.result as "home" | "draw" | "away";
 
   const bets = await Bet.find({ matchId: match._id, status: "pending" });
   for (const bet of bets) {
@@ -272,27 +221,48 @@ export async function startMatchSimulation(matchId: string, skipBettingWindow = 
         clearInterval(interval);
         activeSimulations.delete(matchId);
 
-        const result = determineResult(homeScore, awayScore);
+        // Fetch latest match doc to check for admin forced result
+        const latestMatch = await Match.findById(matchId);
+        let finalHome = homeScore;
+        let finalAway = awayScore;
+        let result: "home" | "draw" | "away";
+
+        if (latestMatch?.forcedResult) {
+          // Admin locked a result — adjust score to be consistent, THEN save.
+          // This way the final score in DB and results page matches what will show at FT.
+          result = latestMatch.forcedResult;
+          const adjusted = adjustScoreForResult(result, homeScore, awayScore);
+          finalHome = adjusted.homeScore;
+          finalAway = adjusted.awayScore;
+          console.log(`🔒 Forced result applied at FT: ${result} (${finalHome}-${finalAway})`);
+        } else {
+          // Natural result — exactly what the live ticker showed
+          result = determineResult(finalHome, finalAway);
+        }
+
         events.push({
           minute: 90,
           type: "fulltime",
           team: "home",
-          description: `🏁 Full time! Final score: ${homeScore}-${awayScore}`,
+          description: `🏁 Full time! Final score: ${finalHome}-${finalAway}`,
         });
 
-        await Match.findByIdAndUpdate(matchId, {
-          status: "completed",
-          minute: 90,
-          homeScore,
-          awayScore,
-          result,
-          completedAt: new Date(),
-          events,
-        });
+        const completedMatch = await Match.findByIdAndUpdate(
+          matchId,
+          {
+            status: "completed",
+            minute: 90,
+            homeScore: finalHome,
+            awayScore: finalAway,
+            result,
+            completedAt: new Date(),
+            events,
+          },
+          { new: true }
+        );
 
-        const match = await Match.findById(matchId);
-        if (match) {
-          await settleBets(match, homeScore, awayScore);
+        if (completedMatch) {
+          await settleBets(completedMatch, finalHome, finalAway);
         }
 
         return;
