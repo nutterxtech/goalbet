@@ -20,6 +20,7 @@ export interface IUser extends Document {
   referralEarnings: number;
   referralCount: number;
   pendingConsolationWin: boolean;
+  consecutiveLosses: number;
   createdAt: Date;
   updatedAt: Date;
   comparePassword(password: string): Promise<boolean>;
@@ -44,6 +45,7 @@ const UserSchema = new Schema<IUser>(
     referralEarnings: { type: Number, default: 0 },
     referralCount: { type: Number, default: 0 },
     pendingConsolationWin: { type: Boolean, default: false },
+    consecutiveLosses: { type: Number, default: 0 },
   },
   { timestamps: true }
 );

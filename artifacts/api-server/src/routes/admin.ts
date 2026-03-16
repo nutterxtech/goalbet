@@ -619,6 +619,10 @@ router.get("/stats", async (req: AuthRequest, res) => {
     todayBetsCount,
     todayBetAmountAgg,
     todayWinningsAgg,
+    spinStakeAgg,
+    spinWinAgg,
+    todaySpinStakeAgg,
+    todaySpinWinAgg,
   ] = await Promise.all([
     User.countDocuments({ role: "user" }),
     User.countDocuments({ role: "user", status: "active" }),
@@ -634,16 +638,30 @@ router.get("/stats", async (req: AuthRequest, res) => {
     Bet.countDocuments({ createdAt: { $gte: todayStart } }),
     Bet.aggregate([{ $match: { createdAt: { $gte: todayStart } } }, { $group: { _id: null, total: { $sum: "$amount" } } }]),
     Transaction.aggregate([{ $match: { type: "winnings", createdAt: { $gte: todayStart } } }, { $group: { _id: null, total: { $sum: "$amount" } } }]),
+    Transaction.aggregate([{ $match: { type: "spin_stake", status: "completed" } }, { $group: { _id: null, total: { $sum: "$amount" } } }]),
+    Transaction.aggregate([{ $match: { type: "spin_win", status: "completed" } }, { $group: { _id: null, total: { $sum: "$amount" } } }]),
+    Transaction.aggregate([{ $match: { type: "spin_stake", status: "completed", createdAt: { $gte: todayStart } } }, { $group: { _id: null, total: { $sum: "$amount" } } }]),
+    Transaction.aggregate([{ $match: { type: "spin_win", status: "completed", createdAt: { $gte: todayStart } } }, { $group: { _id: null, total: { $sum: "$amount" } } }]),
   ]);
 
   const totalBetAmount = betAmountAgg[0]?.total ?? 0;
   const totalDeposits = depositAgg[0]?.total ?? 0;
   const totalWithdrawals = withdrawalAgg[0]?.total ?? 0;
   const totalWinningsPaid = winningsAgg[0]?.total ?? 0;
-  const platformRevenue = totalBetAmount - totalWinningsPaid;
+  const bettingRevenue = totalBetAmount - totalWinningsPaid;
+
+  const totalSpinStaked = spinStakeAgg[0]?.total ?? 0;
+  const totalSpinWon = spinWinAgg[0]?.total ?? 0;
+  const spinRevenue = totalSpinStaked - totalSpinWon;
+  const platformRevenue = bettingRevenue + spinRevenue;
+
   const todayBetAmount = todayBetAmountAgg[0]?.total ?? 0;
   const todayWinningsPaid = todayWinningsAgg[0]?.total ?? 0;
-  const todayRevenue = todayBetAmount - todayWinningsPaid;
+  const todayBettingRevenue = todayBetAmount - todayWinningsPaid;
+  const todaySpinStaked = todaySpinStakeAgg[0]?.total ?? 0;
+  const todaySpinWon = todaySpinWinAgg[0]?.total ?? 0;
+  const todaySpinRevenue = todaySpinStaked - todaySpinWon;
+  const todayRevenue = todayBettingRevenue + todaySpinRevenue;
 
   res.json({
     totalUsers,
@@ -656,9 +674,15 @@ router.get("/stats", async (req: AuthRequest, res) => {
     totalWithdrawals,
     pendingWithdrawals,
     platformRevenue,
+    bettingRevenue,
+    spinRevenue,
+    totalSpinStaked,
+    totalSpinWon,
     totalWinningsPaid,
     todayBets: todayBetsCount,
     todayRevenue,
+    todayBettingRevenue,
+    todaySpinRevenue,
     recentBets: recentBets.map((b) => {
       const user = b.userId as any;
       const match = b.matchId as any;

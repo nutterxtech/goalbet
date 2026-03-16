@@ -80,12 +80,13 @@ router.post("/", authenticate, async (req: AuthRequest, res) => {
 
     await user.save();
 
+    // Record spin stake with dedicated type so admin can track spin revenue separately
     await Transaction.create({
       userId: user._id,
-      type: "bet",
-      amount: -amount,
+      type: "spin_stake",
+      amount: amount,
       fee: 0,
-      netAmount: -amount,
+      netAmount: amount,
       status: "completed",
       description: `Lucky Wheel spin — staked KSh ${amount}`,
     });
@@ -93,7 +94,7 @@ router.post("/", authenticate, async (req: AuthRequest, res) => {
     if (winnings > 0) {
       await Transaction.create({
         userId: user._id,
-        type: "winnings",
+        type: "spin_win",
         amount: winnings,
         fee: 0,
         netAmount: winnings,

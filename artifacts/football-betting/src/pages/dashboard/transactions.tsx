@@ -103,12 +103,14 @@ export default function TransactionsPage() {
             {data.transactions.map((tx, idx) => {
               const isCredit = tx.amount > 0;
               const typeMap: Record<string, { label: string; color: string }> = {
-                deposit:    { label: "Deposit",    color: "text-sky-400" },
-                withdrawal: { label: "Withdrawal", color: "text-amber-400" },
-                bet:        { label: "Bet Placed", color: "text-violet-400" },
-                winnings:   { label: "Winnings",   color: "text-primary" },
-                refund:     { label: "Refund",     color: "text-blue-400" },
-                referral:   { label: "Referral",   color: "text-pink-400" },
+                deposit:     { label: "Deposit",      color: "text-sky-400" },
+                withdrawal:  { label: "Withdrawal",   color: "text-amber-400" },
+                bet:         { label: "Bet Placed",   color: "text-violet-400" },
+                winnings:    { label: "Winnings",     color: "text-primary" },
+                refund:      { label: "Refund",       color: "text-blue-400" },
+                referral:    { label: "Referral",     color: "text-pink-400" },
+                spin_stake:  { label: "Wheel Spin",   color: "text-violet-400" },
+                spin_win:    { label: "Wheel Win",    color: "text-yellow-400" },
               };
               const typeInfo = typeMap[tx.type] ?? { label: tx.type, color: "text-muted-foreground" };
 
