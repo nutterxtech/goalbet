@@ -2,7 +2,7 @@ import mongoose, { Schema, Document } from "mongoose";
 
 export interface ITransaction extends Document {
   userId: mongoose.Types.ObjectId;
-  type: "deposit" | "withdrawal" | "bet" | "winnings" | "refund" | "adjustment";
+  type: "deposit" | "withdrawal" | "bet" | "winnings" | "refund" | "adjustment" | "spin_stake" | "spin_win";
   amount: number;
   fee: number;
   netAmount: number;
@@ -23,7 +23,7 @@ const TransactionSchema = new Schema<ITransaction>(
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
     type: {
       type: String,
-      enum: ["deposit", "withdrawal", "bet", "winnings", "refund", "adjustment"],
+      enum: ["deposit", "withdrawal", "bet", "winnings", "refund", "adjustment", "spin_stake", "spin_win"],
       required: true,
     },
     amount: { type: Number, required: true },
