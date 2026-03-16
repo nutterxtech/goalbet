@@ -1,6 +1,6 @@
 import { ReactNode, useEffect } from "react";
 import { Link, useLocation } from "wouter";
-import { Trophy, History, ArrowLeftRight, Activity, Bell } from "lucide-react";
+import { Trophy, History, ArrowLeftRight, Activity, Bell, Sparkles } from "lucide-react";
 import { Navbar } from "./Navbar";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -10,6 +10,7 @@ const navItems = [
   { href: "/dashboard/transactions", label: "Wallet", icon: ArrowLeftRight },
   { href: "/dashboard/notifications", label: "Notifications", icon: Bell },
   { href: "/dashboard/leaderboard", label: "Leaderboard", icon: Trophy },
+  { href: "/dashboard/lucky-wheel", label: "Lucky Wheel", icon: Sparkles, highlight: true },
 ];
 
 export function UserLayout({ children }: { children: ReactNode }) {
@@ -33,6 +34,7 @@ export function UserLayout({ children }: { children: ReactNode }) {
             {navItems.map((item) => {
               const isActive = location === item.href;
               const Icon = item.icon;
+              const isHighlight = (item as any).highlight;
               
               return (
                 <Link key={item.href} href={item.href}>
@@ -40,10 +42,15 @@ export function UserLayout({ children }: { children: ReactNode }) {
                     flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all duration-200 cursor-pointer whitespace-nowrap
                     ${isActive 
                       ? "bg-primary/10 text-primary border border-primary/20 shadow-[inset_0_0_20px_rgba(0,230,92,0.05)]" 
-                      : "text-muted-foreground hover:text-white hover:bg-card border border-transparent"}
+                      : isHighlight
+                        ? "text-primary border border-primary/30 bg-primary/5 hover:bg-primary/10 hover:border-primary/50 shadow-[0_0_12px_rgba(0,230,92,0.1)]"
+                        : "text-muted-foreground hover:text-white hover:bg-card border border-transparent"}
                   `}>
-                    <Icon className={`h-5 w-5 ${isActive ? "text-primary" : "opacity-70"}`} />
+                    <Icon className={`h-5 w-5 ${isActive || isHighlight ? "text-primary" : "opacity-70"}`} />
                     {item.label}
+                    {isHighlight && !isActive && (
+                      <span className="ml-auto text-[9px] font-bold bg-primary/20 text-primary px-1.5 py-0.5 rounded-full">NEW</span>
+                    )}
                   </div>
                 </Link>
               );
