@@ -57,26 +57,34 @@ function adjustScoreForResult(
 }
 
 /**
- * Check platform's recent P&L to determine if recovery mode should be active.
- * Recovery mode tightens protection so platform recoups losses gradually.
+ * Check platform's recent P&L (last 5 minutes) to decide if recovery mode
+ * should be active. When true, the risk guard tightens so the platform
+ * recoups losses from the very next match settlements.
  */
 async function isPlatformInRecovery(): Promise<boolean> {
   try {
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const [betAgg, winAgg] = await Promise.all([
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    const [slipAgg, winAgg, refundAgg] = await Promise.all([
+      BetSlip.aggregate([
+        { $match: { status: { $ne: "pending" }, settledAt: { $gte: fiveMinutesAgo } } },
+        { $group: { _id: null, total: { $sum: "$stake" } } },
+      ]),
       Transaction.aggregate([
-        { $match: { type: "bet", status: "completed", createdAt: { $gte: sevenDaysAgo } } },
+        { $match: { type: "winnings", createdAt: { $gte: fiveMinutesAgo } } },
         { $group: { _id: null, total: { $sum: "$amount" } } },
       ]),
       Transaction.aggregate([
-        { $match: { type: "winnings", createdAt: { $gte: sevenDaysAgo } } },
+        { $match: { type: "refund", createdAt: { $gte: fiveMinutesAgo } } },
         { $group: { _id: null, total: { $sum: "$amount" } } },
       ]),
     ]);
-    const collected = betAgg[0]?.total ?? 0;
-    const paid = winAgg[0]?.total ?? 0;
+    const collected = slipAgg[0]?.total ?? 0;
+    const paid = (winAgg[0]?.total ?? 0) + (refundAgg[0]?.total ?? 0);
     const recentPL = collected - paid;
-    return recentPL < 0; // platform lost money in last 7 days → recovery mode
+    if (recentPL < 0) {
+      console.log(`🔄 Recovery triggered: last 5 min P&L = KSh ${recentPL.toFixed(2)}`);
+    }
+    return recentPL < 0;
   } catch {
     return false;
   }

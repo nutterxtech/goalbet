@@ -66,7 +66,7 @@ export default function AdminOverview() {
       value: formatCurrency(d?.bettingRevenue ?? 0),
       icon: TrendingUp,
       color: (d?.bettingRevenue ?? 0) >= 0 ? "text-green-400" : "text-red-400",
-      desc: "Bets staked minus winnings paid",
+      desc: `KSh ${(d?.totalBetAmount ?? 0).toLocaleString()} staked − KSh ${(d?.totalWinningsPaid ?? 0).toLocaleString()} wins − KSh ${(d?.totalRefundsPaid ?? 0).toLocaleString()} refunds`,
     },
     {
       title: "Lucky Wheel Revenue",

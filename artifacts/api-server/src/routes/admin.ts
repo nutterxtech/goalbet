@@ -3,6 +3,7 @@ import { requireAdmin, type AuthRequest } from "../middleware/auth.js";
 import { User } from "../models/User.js";
 import { Match } from "../models/Match.js";
 import { Bet } from "../models/Bet.js";
+import { BetSlip } from "../models/BetSlip.js";
 import { initiateB2C } from "../services/darajaService.js";
 import { Transaction } from "../models/Transaction.js";
 import { ActivityLog } from "../models/ActivityLog.js";
@@ -609,16 +610,18 @@ router.get("/stats", async (req: AuthRequest, res) => {
     activeUsers,
     totalMatches,
     liveMatches,
-    totalBetsCount,
-    betAmountAgg,
+    totalSlipsCount,
+    slipStakeAgg,
     depositAgg,
     withdrawalAgg,
     pendingWithdrawals,
     winningsAgg,
+    refundAgg,
     recentBets,
-    todayBetsCount,
-    todayBetAmountAgg,
+    todaySlipsCount,
+    todaySlipStakeAgg,
     todayWinningsAgg,
+    todayRefundAgg,
     spinStakeAgg,
     spinWinAgg,
     todaySpinStakeAgg,
@@ -628,39 +631,52 @@ router.get("/stats", async (req: AuthRequest, res) => {
     User.countDocuments({ role: "user", status: "active" }),
     Match.countDocuments(),
     Match.countDocuments({ status: "live" }),
-    Bet.countDocuments(),
-    Bet.aggregate([{ $group: { _id: null, total: { $sum: "$amount" } } }]),
+    // Count slips (each slip = one user bet, regardless of number of selections)
+    BetSlip.countDocuments(),
+    // Total staked = sum of BetSlip stakes (not Bet records — those are per selection and overcount)
+    BetSlip.aggregate([{ $group: { _id: null, total: { $sum: "$stake" } } }]),
     Transaction.aggregate([{ $match: { type: "deposit", status: "completed" } }, { $group: { _id: null, total: { $sum: "$amount" } } }]),
     Transaction.aggregate([{ $match: { type: "withdrawal", status: "completed" } }, { $group: { _id: null, total: { $sum: "$amount" } } }]),
     Transaction.countDocuments({ type: "withdrawal", status: "pending" }),
+    // Winnings paid out to users
     Transaction.aggregate([{ $match: { type: "winnings" } }, { $group: { _id: null, total: { $sum: "$amount" } } }]),
-    Bet.find().populate("userId", "username").populate("matchId", "homeTeam awayTeam").sort({ createdAt: -1 }).limit(10),
-    Bet.countDocuments({ createdAt: { $gte: todayStart } }),
-    Bet.aggregate([{ $match: { createdAt: { $gte: todayStart } } }, { $group: { _id: null, total: { $sum: "$amount" } } }]),
+    // Consolation refunds paid back to users (also reduces net revenue)
+    Transaction.aggregate([{ $match: { type: "refund" } }, { $group: { _id: null, total: { $sum: "$amount" } } }]),
+    BetSlip.find().populate("userId", "username").sort({ createdAt: -1 }).limit(10),
+    BetSlip.countDocuments({ createdAt: { $gte: todayStart } }),
+    BetSlip.aggregate([{ $match: { createdAt: { $gte: todayStart } } }, { $group: { _id: null, total: { $sum: "$stake" } } }]),
     Transaction.aggregate([{ $match: { type: "winnings", createdAt: { $gte: todayStart } } }, { $group: { _id: null, total: { $sum: "$amount" } } }]),
+    Transaction.aggregate([{ $match: { type: "refund", createdAt: { $gte: todayStart } } }, { $group: { _id: null, total: { $sum: "$amount" } } }]),
     Transaction.aggregate([{ $match: { type: "spin_stake", status: "completed" } }, { $group: { _id: null, total: { $sum: "$amount" } } }]),
     Transaction.aggregate([{ $match: { type: "spin_win", status: "completed" } }, { $group: { _id: null, total: { $sum: "$amount" } } }]),
     Transaction.aggregate([{ $match: { type: "spin_stake", status: "completed", createdAt: { $gte: todayStart } } }, { $group: { _id: null, total: { $sum: "$amount" } } }]),
     Transaction.aggregate([{ $match: { type: "spin_win", status: "completed", createdAt: { $gte: todayStart } } }, { $group: { _id: null, total: { $sum: "$amount" } } }]),
   ]);
 
-  const totalBetAmount = betAmountAgg[0]?.total ?? 0;
-  const totalDeposits = depositAgg[0]?.total ?? 0;
+  // Betting revenue: stakes collected minus winnings paid minus consolation refunds
+  const totalBetAmount = slipStakeAgg[0]?.total ?? 0;          // actual KSh staked in slips
+  const totalDeposits  = depositAgg[0]?.total ?? 0;
   const totalWithdrawals = withdrawalAgg[0]?.total ?? 0;
-  const totalWinningsPaid = winningsAgg[0]?.total ?? 0;
-  const bettingRevenue = totalBetAmount - totalWinningsPaid;
+  const totalWinningsPaid = winningsAgg[0]?.total ?? 0;         // match winnings paid out
+  const totalRefundsPaid  = refundAgg[0]?.total ?? 0;          // consolation refunds paid out
+  const bettingRevenue = totalBetAmount - totalWinningsPaid - totalRefundsPaid;
 
+  // Spin revenue: spin stakes minus spin payouts
   const totalSpinStaked = spinStakeAgg[0]?.total ?? 0;
-  const totalSpinWon = spinWinAgg[0]?.total ?? 0;
+  const totalSpinWon    = spinWinAgg[0]?.total ?? 0;
   const spinRevenue = totalSpinStaked - totalSpinWon;
+
+  // Combined platform revenue
   const platformRevenue = bettingRevenue + spinRevenue;
 
-  const todayBetAmount = todayBetAmountAgg[0]?.total ?? 0;
-  const todayWinningsPaid = todayWinningsAgg[0]?.total ?? 0;
-  const todayBettingRevenue = todayBetAmount - todayWinningsPaid;
-  const todaySpinStaked = todaySpinStakeAgg[0]?.total ?? 0;
-  const todaySpinWon = todaySpinWinAgg[0]?.total ?? 0;
-  const todaySpinRevenue = todaySpinStaked - todaySpinWon;
+  // Today's figures
+  const todayBetAmount     = todaySlipStakeAgg[0]?.total ?? 0;
+  const todayWinningsPaid  = todayWinningsAgg[0]?.total ?? 0;
+  const todayRefundsPaid   = todayRefundAgg[0]?.total ?? 0;
+  const todayBettingRevenue = todayBetAmount - todayWinningsPaid - todayRefundsPaid;
+  const todaySpinStaked    = todaySpinStakeAgg[0]?.total ?? 0;
+  const todaySpinWon       = todaySpinWinAgg[0]?.total ?? 0;
+  const todaySpinRevenue   = todaySpinStaked - todaySpinWon;
   const todayRevenue = todayBettingRevenue + todaySpinRevenue;
 
   res.json({
@@ -668,10 +684,11 @@ router.get("/stats", async (req: AuthRequest, res) => {
     activeUsers,
     totalMatches,
     liveMatches,
-    totalBets: totalBetsCount,
+    totalBets: totalSlipsCount,
     totalBetAmount,
     totalDeposits,
     totalWithdrawals,
+    totalRefundsPaid,
     pendingWithdrawals,
     platformRevenue,
     bettingRevenue,
@@ -679,26 +696,23 @@ router.get("/stats", async (req: AuthRequest, res) => {
     totalSpinStaked,
     totalSpinWon,
     totalWinningsPaid,
-    todayBets: todayBetsCount,
+    todayBets: todaySlipsCount,
     todayRevenue,
     todayBettingRevenue,
     todaySpinRevenue,
-    recentBets: recentBets.map((b) => {
+    recentBets: recentBets.map((b: any) => {
       const user = b.userId as any;
-      const match = b.matchId as any;
       return {
-        id: b.id,
-        matchId: match?._id?.toString() ?? "",
+        id: b._id?.toString() ?? b.id,
+        slipId: b.slipId,
         userId: user?._id?.toString() ?? "",
         username: user?.username ?? "",
-        homeTeam: match?.homeTeam ?? "",
-        awayTeam: match?.awayTeam ?? "",
-        outcome: b.outcome,
-        amount: b.amount,
-        odds: b.odds,
+        selections: (b.selections ?? []).length,
+        stake: b.stake,
+        combinedOdds: b.combinedOdds,
         potentialWinnings: b.potentialWinnings,
         status: b.status,
-        actualWinnings: b.actualWinnings,
+        actualWinnings: b.actualWinnings ?? 0,
         createdAt: b.createdAt,
       };
     }),
