@@ -19,7 +19,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Input } from "@/components/ui/input";
 import {
   Loader2, Clock, CheckCircle2, XCircle, Trash2, ChevronRight,
-  Receipt, History, Trophy, Bell, Sparkles, TrendingUp, Activity,
+  Receipt, Wallet, History, Trophy, Bell, Sparkles, ArrowDownToLine, ArrowUpFromLine,
+  TrendingUp, Activity,
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency, formatRelativeTime, formatDate } from "@/lib/format";
@@ -53,7 +54,7 @@ function Countdown({ targetDate, label = "" }: { targetDate: string; label?: str
 }
 
 // ─── Feature Quick-Access Panel ────────────────────────────────────────────────
-function FeaturePanel({ balance: _balance }: { balance: number }) {
+function FeaturePanel({ balance }: { balance: number }) {
   const tiles = [
     {
       href: "/dashboard/my-bets",
@@ -104,6 +105,33 @@ function FeaturePanel({ balance: _balance }: { balance: number }) {
 
   return (
     <div className="mb-8">
+      {/* Balance hero strip */}
+      <div className="bg-gradient-to-r from-primary/20 via-emerald-900/20 to-transparent border border-primary/30 rounded-2xl p-5 mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-[0_0_32px_rgba(0,230,92,0.1)]">
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 rounded-2xl bg-primary/20 border-2 border-primary/40 flex items-center justify-center shadow-[0_0_16px_rgba(0,230,92,0.3)]">
+            <Wallet className="h-7 w-7 text-primary" />
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground uppercase tracking-widest font-bold mb-0.5">Available Balance</p>
+            <p className="text-3xl font-display font-black text-primary tracking-tight leading-none">
+              {formatCurrency(balance)}
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-2 shrink-0">
+          <Link href="/dashboard/transactions">
+            <Button className="bg-primary text-primary-foreground font-bold hover:bg-primary/90 shadow-[0_0_16px_rgba(0,230,92,0.3)] h-10">
+              <ArrowDownToLine className="w-4 h-4 mr-1.5" /> Deposit
+            </Button>
+          </Link>
+          <Link href="/dashboard/transactions">
+            <Button variant="outline" className="border-primary/40 text-primary hover:bg-primary/10 font-bold h-10">
+              <ArrowUpFromLine className="w-4 h-4 mr-1.5" /> Withdraw
+            </Button>
+          </Link>
+        </div>
+      </div>
+
       {/* Feature tiles grid */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {tiles.map((tile) => {
