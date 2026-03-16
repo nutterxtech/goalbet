@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatCurrency } from "@/lib/format";
-import { Sparkles, RotateCcw, Trophy, AlertCircle } from "lucide-react";
+import { Sparkles, RotateCcw, Trophy, AlertCircle, X } from "lucide-react";
 
 const SEGMENTS = [
   { label: "0.00×", multiplier: 0, color: "#1a2235", textColor: "#6b7280" },
@@ -216,6 +216,24 @@ export default function LuckyWheelPage() {
                   <SpinWheel rotation={rotation} />
                 </div>
 
+                {/* ── Error overlay — appears ON TOP of wheel for any error ── */}
+                {error && !showResult && (
+                  <div className="absolute inset-0 flex items-center justify-center rounded-full z-30"
+                    style={{ background: "radial-gradient(circle, rgba(13,13,26,0.95) 55%, rgba(13,13,26,0.75) 100%)" }}>
+                    <div className="text-center px-6 py-4 max-w-[260px]">
+                      <div className="w-14 h-14 rounded-full bg-destructive/20 border-2 border-destructive/50 flex items-center justify-center mx-auto mb-3">
+                        <AlertCircle className="h-7 w-7 text-destructive" />
+                      </div>
+                      <p className="text-destructive font-black text-lg font-display mb-2 leading-tight">Oops!</p>
+                      <p className="text-white text-sm font-medium mb-4 leading-snug">{error}</p>
+                      <Button onClick={() => setError(null)} size="sm"
+                        className="bg-destructive/20 text-destructive border border-destructive/40 hover:bg-destructive hover:text-white font-bold px-5">
+                        <X className="mr-1.5 h-3.5 w-3.5" /> Dismiss
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
                 {/* ── Result overlay — appears ON TOP of wheel after spin ── */}
                 {showResult && result && (
                   <div className="absolute inset-0 flex items-center justify-center rounded-full z-30"
@@ -318,12 +336,6 @@ export default function LuckyWheelPage() {
                     </div>
                   ))}
                 </div>
-
-                {error && (
-                  <div className="flex items-center gap-2 text-destructive text-sm mb-3 p-3 bg-destructive/10 rounded-xl border border-destructive/20">
-                    <AlertCircle className="h-4 w-4 shrink-0" /> {error}
-                  </div>
-                )}
 
                 <Button onClick={showResult ? handleTryAgain : handleSpin}
                   disabled={spinning}
