@@ -2,6 +2,7 @@ import { Router } from "express";
 import { authenticate, type AuthRequest } from "../middleware/auth.js";
 import { User } from "../models/User.js";
 import { Transaction } from "../models/Transaction.js";
+import { getConfig } from "../models/PlatformConfig.js";
 
 const router = Router();
 
@@ -20,9 +21,10 @@ const SEGMENTS = [
   { label: "10×",   multiplier: 10 },  // 11
 ];
 
-// Weighted random pick: weights correspond to each segment index
+// Win segments' expected return = sum(weight_i * mult_i) / sum(weights)
+// Lose (mult=0): indices 0,2,4,6,8,10 → total weight 70; Win: 1(6)→1.5, 3(8)→2, 5(5)→3, 7(3)→5, 9(6)→1.5, 11(2)→10
+// Expected: (6*1.5+8*2+5*3+3*5+6*1.5+2*10)/89 ≈ 0.944 → ~5.6% house edge
 const WEIGHTS = [12, 6, 12, 8, 12, 5, 12, 3, 12, 6, 11, 2];
-// Lose segments (0,2,4,6,8,10) total = 71%; win segments total = 29%
 
 function pickSegment(): number {
   const total = WEIGHTS.reduce((a, b) => a + b, 0);
@@ -34,12 +36,26 @@ function pickSegment(): number {
   return 0;
 }
 
+// GET /api/spin/config — returns spin limits (public, no auth)
+router.get("/config", async (_req, res) => {
+  try {
+    const config = await getConfig();
+    res.json({ minSpinAmount: config.minSpinAmount ?? 10, maxSpinAmount: config.maxSpinAmount ?? 50000 });
+  } catch {
+    res.json({ minSpinAmount: 10, maxSpinAmount: 50000 });
+  }
+});
+
 // POST /api/spin
 router.post("/", authenticate, async (req: AuthRequest, res) => {
   try {
+    const config = await getConfig();
+    const minSpin = config.minSpinAmount ?? 10;
+    const maxSpin = config.maxSpinAmount ?? 50000;
+
     const amount = Number(req.body.amount);
-    if (!amount || amount < 10 || amount > 50000 || isNaN(amount)) {
-      res.status(400).json({ message: "Spin amount must be between KSh 10 and KSh 50,000." });
+    if (!amount || isNaN(amount) || amount < minSpin || amount > maxSpin) {
+      res.status(400).json({ message: `Spin amount must be between KSh ${minSpin} and KSh ${maxSpin.toLocaleString()}.` });
       return;
     }
 
@@ -50,31 +66,30 @@ router.post("/", authenticate, async (req: AuthRequest, res) => {
       return;
     }
 
-    // Deduct stake
+    // Deduct stake first (site always collects the stake)
     user.balance -= amount;
 
     const segmentIndex = pickSegment();
     const segment = SEGMENTS[segmentIndex];
     const winnings = parseFloat((amount * segment.multiplier).toFixed(2));
 
+    // Credit winnings only if user won (site never goes negative — house edge built into weights)
     if (winnings > 0) {
       user.balance += winnings;
     }
 
     await user.save();
 
-    // Record stake transaction
     await Transaction.create({
       userId: user._id,
       type: "bet",
-      amount,
+      amount: -amount,
       fee: 0,
       netAmount: -amount,
       status: "completed",
-      description: `Lucky Wheel spin — KSh ${amount}`,
+      description: `Lucky Wheel spin — staked KSh ${amount}`,
     });
 
-    // Record winnings transaction if won
     if (winnings > 0) {
       await Transaction.create({
         userId: user._id,
@@ -83,7 +98,7 @@ router.post("/", authenticate, async (req: AuthRequest, res) => {
         fee: 0,
         netAmount: winnings,
         status: "completed",
-        description: `Lucky Wheel win — ${segment.label} × KSh ${amount} = KSh ${winnings}`,
+        description: `Lucky Wheel — ${segment.label} multiplier on KSh ${amount} stake`,
       });
     }
 

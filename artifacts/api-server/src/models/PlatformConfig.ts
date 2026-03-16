@@ -10,6 +10,8 @@ export interface IPlatformConfig extends Document {
   maxBetAmount: number;
   consolationRefundPercent: number;
   referralRewardAmount: number;
+  minSpinAmount: number;
+  maxSpinAmount: number;
   mpesaConsumerKey: string;
   mpesaConsumerSecret: string;
   mpesaShortCode: string;
@@ -30,6 +32,8 @@ const PlatformConfigSchema = new Schema<IPlatformConfig>(
     maxBetAmount: { type: Number, default: 10000 },
     consolationRefundPercent: { type: Number, default: 50 },
     referralRewardAmount: { type: Number, default: 50 },
+    minSpinAmount: { type: Number, default: 10 },
+    maxSpinAmount: { type: Number, default: 50000 },
     mpesaConsumerKey: { type: String, default: "" },
     mpesaConsumerSecret: { type: String, default: "" },
     mpesaShortCode: { type: String, default: "" },

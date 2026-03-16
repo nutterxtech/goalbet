@@ -4,7 +4,7 @@ import { useGetTransactions, useWithdraw } from "@workspace/api-client-react";
 import { API_BASE } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -16,7 +16,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 
 export default function TransactionsPage() {
-  const { data, isLoading } = useGetTransactions({ page: 1, limit: 50 });
+  const { data, isLoading } = useGetTransactions({ page: 1, limit: 10 });
   const { user } = useAuth();
   const [depositOpen, setDepositOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
@@ -78,56 +78,78 @@ export default function TransactionsPage() {
         </Card>
       )}
 
-      <Card className="border-border/50 bg-card/80 backdrop-blur overflow-hidden">
-        <CardContent className="p-0">
-          {isLoading ? (
-            <div className="flex justify-center p-12">
-              <Loader2 className="w-8 h-8 animate-spin text-primary" />
-            </div>
-          ) : data?.transactions.length === 0 ? (
-            <div className="text-center p-12 text-muted-foreground">
-              No transactions found.
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader className="bg-secondary/50">
-                  <TableRow className="border-border/50 hover:bg-transparent">
-                    <TableHead>Date</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {data?.transactions.map((tx) => (
-                    <TableRow key={tx.id} className="border-border/50 hover:bg-secondary/20">
-                      <TableCell className="text-muted-foreground text-sm whitespace-nowrap">
-                        {formatDate(tx.createdAt)}
-                      </TableCell>
-                      <TableCell>
-                        <span className="capitalize text-xs font-bold tracking-wider">{tx.type}</span>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground max-w-xs truncate">
-                        {tx.description || '-'}
-                      </TableCell>
-                      <TableCell className={`text-right font-medium ${tx.amount > 0 ? 'text-primary' : 'text-destructive'}`}>
-                        {tx.amount > 0 ? '+' : ''}{formatCurrency(tx.amount)}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={tx.status === 'completed' ? 'default' : tx.status === 'rejected' ? 'destructive' : 'secondary'} className={tx.status === 'completed' ? 'bg-primary/20 text-primary hover:bg-primary/30' : ''}>
-                          {tx.status}
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {/* Transaction Statement */}
+      <div className="bg-card border border-border/50 rounded-2xl overflow-hidden">
+        {/* Statement header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border/50 bg-secondary/30">
+          <div className="flex items-center gap-2">
+            <ArrowDownToLine className="w-4 h-4 text-muted-foreground" />
+            <span className="font-semibold text-sm text-white">Statement</span>
+            <Badge variant="secondary" className="text-[10px] h-5 px-2">Last 10</Badge>
+          </div>
+        </div>
+
+        {isLoading ? (
+          <div className="flex justify-center p-12">
+            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          </div>
+        ) : !data?.transactions.length ? (
+          <div className="text-center p-12 text-muted-foreground">
+            <ArrowDownToLine className="w-10 h-10 mx-auto mb-3 opacity-30" />
+            No transactions yet. Make a deposit to get started.
+          </div>
+        ) : (
+          <div className="divide-y divide-border/30">
+            {data.transactions.map((tx, idx) => {
+              const isCredit = tx.amount > 0;
+              const typeMap: Record<string, { label: string; color: string }> = {
+                deposit:    { label: "Deposit",    color: "text-sky-400" },
+                withdrawal: { label: "Withdrawal", color: "text-amber-400" },
+                bet:        { label: "Bet Placed", color: "text-violet-400" },
+                winnings:   { label: "Winnings",   color: "text-primary" },
+                refund:     { label: "Refund",     color: "text-blue-400" },
+                referral:   { label: "Referral",   color: "text-pink-400" },
+              };
+              const typeInfo = typeMap[tx.type] ?? { label: tx.type, color: "text-muted-foreground" };
+
+              return (
+                <div key={tx.id} className="flex items-center gap-4 px-5 py-3.5 hover:bg-secondary/20 transition-colors">
+                  {/* Index */}
+                  <span className="text-[10px] text-muted-foreground/50 w-4 shrink-0 font-mono">{idx + 1}</span>
+
+                  {/* Type indicator dot */}
+                  <div className={`w-2 h-2 rounded-full shrink-0 ${isCredit ? "bg-primary" : "bg-destructive"}`} />
+
+                  {/* Details */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[10px] font-black uppercase tracking-widest ${typeInfo.color}`}>{typeInfo.label}</span>
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${
+                        tx.status === "completed"
+                          ? "bg-green-500/10 text-green-400"
+                          : tx.status === "pending"
+                          ? "bg-amber-500/10 text-amber-400"
+                          : "bg-red-500/10 text-red-400"
+                      }`}>{tx.status}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground truncate mt-0.5 max-w-xs">
+                      {tx.description || "—"}
+                    </p>
+                  </div>
+
+                  {/* Amount + date */}
+                  <div className="text-right shrink-0">
+                    <p className={`font-display font-bold text-sm ${isCredit ? "text-primary" : "text-destructive"}`}>
+                      {isCredit ? "+" : ""}{formatCurrency(tx.amount)}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground/60 mt-0.5">{formatDate(tx.createdAt)}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       <DepositModal open={depositOpen} onOpenChange={setDepositOpen} />
       <WithdrawModal open={withdrawOpen} onOpenChange={setWithdrawOpen} />

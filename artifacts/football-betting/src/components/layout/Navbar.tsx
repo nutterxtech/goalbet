@@ -15,7 +15,6 @@ import {
   User as UserIcon, 
   LogOut, 
   ShieldCheck,
-  Sparkles
 } from "lucide-react";
 import { useGetNotifications, useGetBalance } from "@workspace/api-client-react";
 import { formatCurrency } from "@/lib/format";
@@ -52,34 +51,6 @@ export function Navbar() {
         <div className="ml-auto flex items-center space-x-2 sm:space-x-4">
           {user ? (
             <>
-              {/* Balance Display */}
-              {!isAdmin && (
-                <div className="hidden sm:flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-xl">
-                  <Wallet className="h-4 w-4 text-primary" />
-                  <span className="font-display font-bold text-sm tracking-wide">
-                    {formatCurrency(balanceData?.balance || user.balance || 0)}
-                  </span>
-                </div>
-              )}
-
-              {/* Lucky Wheel link */}
-              {!isAdmin && (
-                <Link href="/dashboard/lucky-wheel">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className={`hidden sm:flex items-center gap-1.5 rounded-xl font-semibold text-xs px-3 h-9 border transition-all ${
-                      location === "/dashboard/lucky-wheel"
-                        ? "bg-primary/20 border-primary/50 text-primary"
-                        : "border-transparent text-muted-foreground hover:text-white hover:bg-card hover:border-border"
-                    }`}
-                  >
-                    <Sparkles className="h-3.5 w-3.5" />
-                    Lucky Wheel
-                  </Button>
-                </Link>
-              )}
-
               {/* Notifications — link to full page */}
               {!isAdmin && (
                 <Link href="/dashboard/notifications">

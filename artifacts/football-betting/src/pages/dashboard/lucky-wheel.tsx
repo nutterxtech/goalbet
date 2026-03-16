@@ -39,13 +39,10 @@ function segmentPath(cx: number, cy: number, r: number, startDeg: number, endDeg
 
 function SpinWheel({ rotation }: { rotation: number }) {
   const cx = 200, cy = 200, r = 190;
-
   return (
     <svg viewBox="0 0 400 400" className="w-full h-full drop-shadow-2xl" style={{ filter: "drop-shadow(0 0 30px rgba(0,230,92,0.2))" }}>
-      {/* Outer glow ring */}
       <circle cx={cx} cy={cy} r={195} fill="none" stroke="rgba(0,230,92,0.2)" strokeWidth="6" />
       <circle cx={cx} cy={cy} r={197} fill="none" stroke="rgba(0,230,92,0.08)" strokeWidth="3" />
-
       <g style={{ transform: `rotate(${rotation}deg)`, transformOrigin: "200px 200px", transition: "none" }}>
         {SEGMENTS.map((seg, i) => {
           const startDeg = i * SLICE;
@@ -53,25 +50,13 @@ function SpinWheel({ rotation }: { rotation: number }) {
           const mid = startDeg + SLICE / 2;
           const textR = r * 0.65;
           const tp = polarToCartesian(cx, cy, textR, mid);
-          const textRad = ((mid - 90) * Math.PI) / 180;
-
           return (
             <g key={i}>
-              <path
-                d={segmentPath(cx, cy, r, startDeg, endDeg)}
-                fill={seg.color}
-                stroke="rgba(255,255,255,0.08)"
-                strokeWidth="1.5"
-              />
-              <text
-                x={tp.x}
-                y={tp.y}
-                fill={seg.textColor}
+              <path d={segmentPath(cx, cy, r, startDeg, endDeg)} fill={seg.color} stroke="rgba(255,255,255,0.08)" strokeWidth="1.5" />
+              <text x={tp.x} y={tp.y} fill={seg.textColor}
                 fontSize={seg.multiplier >= 10 ? "15" : seg.multiplier === 0 ? "11" : "14"}
-                fontWeight="bold"
-                fontFamily="system-ui, sans-serif"
-                textAnchor="middle"
-                dominantBaseline="middle"
+                fontWeight="bold" fontFamily="system-ui, sans-serif"
+                textAnchor="middle" dominantBaseline="middle"
                 transform={`rotate(${mid}, ${tp.x}, ${tp.y})`}
               >
                 {seg.label}
@@ -80,19 +65,13 @@ function SpinWheel({ rotation }: { rotation: number }) {
           );
         })}
       </g>
-
-      {/* Divider lines */}
       <g style={{ transform: `rotate(${rotation}deg)`, transformOrigin: "200px 200px", transition: "none" }}>
         {SEGMENTS.map((_, i) => {
           const deg = i * SLICE;
           const p = polarToCartesian(cx, cy, r, deg);
-          return (
-            <line key={i} x1={cx} y1={cy} x2={p.x} y2={p.y} stroke="rgba(255,255,255,0.15)" strokeWidth="1.5" />
-          );
+          return <line key={i} x1={cx} y1={cy} x2={p.x} y2={p.y} stroke="rgba(255,255,255,0.15)" strokeWidth="1.5" />;
         })}
       </g>
-
-      {/* Center hub */}
       <circle cx={cx} cy={cy} r={28} fill="#0d0d1a" stroke="rgba(0,230,92,0.5)" strokeWidth="3" />
       <circle cx={cx} cy={cy} r={18} fill="rgba(0,230,92,0.15)" />
       <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle" fontSize="18" fill="#00e65c">⚽</text>
@@ -117,17 +96,27 @@ export default function LuckyWheelPage() {
   const [result, setResult] = useState<SpinResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showResult, setShowResult] = useState(false);
+  const [minSpin, setMinSpin] = useState(10);
+  const [maxSpin, setMaxSpin] = useState(50000);
   const wheelRef = useRef<HTMLDivElement>(null);
   const currentRotationRef = useRef(0);
   const qc = useQueryClient();
 
-  // Floating balls animation
+  // Fetch spin config (min/max) from backend
+  useEffect(() => {
+    apiFetch("/spin/config").then(r => r.json()).then(d => {
+      if (d.minSpinAmount) setMinSpin(d.minSpinAmount);
+      if (d.maxSpinAmount) setMaxSpin(d.maxSpinAmount);
+    }).catch(() => {});
+  }, []);
+
   const balls = Array.from({ length: 8 }, (_, i) => i);
+  const isWin = result && result.multiplier > 0;
 
   async function handleSpin() {
     const stake = Number(amount);
-    if (!stake || stake < 10) { setError("Minimum spin is KSh 10"); return; }
-    if (stake > 50000) { setError("Maximum spin is KSh 50,000"); return; }
+    if (!stake || stake < minSpin) { setError(`Minimum spin is KSh ${minSpin}`); return; }
+    if (stake > maxSpin) { setError(`Maximum spin is KSh ${maxSpin.toLocaleString()}`); return; }
 
     setError(null);
     setResult(null);
@@ -135,29 +124,19 @@ export default function LuckyWheelPage() {
     setSpinning(true);
 
     try {
-      const res = await apiFetch("/spin", {
-        method: "POST",
-        body: JSON.stringify({ amount: stake }),
-      });
+      const res = await apiFetch("/spin", { method: "POST", body: JSON.stringify({ amount: stake }) });
       const data = await res.json();
       if (!res.ok) { setError(data.message || "Spin failed"); setSpinning(false); return; }
 
-      // Calculate target rotation:
-      // We want SEGMENTS[segmentIndex] to land under the top pointer.
-      // The pointer is at 0° (top). Segment i starts at i*SLICE degrees.
-      // To center segment i under the pointer, the wheel must rotate so that
-      // the center of segment i is at the top: -(i * SLICE + SLICE/2)
       const targetSegmentAngle = data.segmentIndex * SLICE + SLICE / 2;
-      // Extra full spins (5–8) for drama
       const extraSpins = (5 + Math.floor(Math.random() * 4)) * 360;
       const finalRotation = currentRotationRef.current + extraSpins + (360 - (currentRotationRef.current % 360)) - targetSegmentAngle;
 
-      // Apply animation
       if (wheelRef.current) {
-        const el = wheelRef.current.querySelector("svg g");
+        const el = wheelRef.current.querySelector("svg g") as HTMLElement | null;
         if (el) {
-          (el as HTMLElement).style.transition = `transform 4.5s cubic-bezier(0.17,0.67,0.12,0.99)`;
-          (el as HTMLElement).style.transform = `rotate(${finalRotation}deg)`;
+          el.style.transition = `transform 4.5s cubic-bezier(0.17,0.67,0.12,0.99)`;
+          el.style.transform = `rotate(${finalRotation}deg)`;
         }
       }
 
@@ -165,13 +144,13 @@ export default function LuckyWheelPage() {
       setRotation(finalRotation);
       currentRotationRef.current = finalRotation;
 
-      // After animation completes, show result
       setTimeout(() => {
         setAnimating(false);
         setSpinning(false);
         setResult(data);
         setShowResult(true);
         qc.invalidateQueries({ queryKey: ["getBalance"] });
+        qc.invalidateQueries({ queryKey: ["/api/user/balance"] });
       }, 4800);
     } catch {
       setError("Network error. Please try again.");
@@ -179,33 +158,25 @@ export default function LuckyWheelPage() {
     }
   }
 
-  // Reset transition after animation completes to allow next spin
+  function handleTryAgain() {
+    setShowResult(false);
+    setResult(null);
+    setError(null);
+  }
+
   useEffect(() => {
     if (!animating && wheelRef.current) {
-      const el = wheelRef.current.querySelector("svg g");
-      if (el) {
-        (el as HTMLElement).style.transition = "none";
-      }
+      const el = wheelRef.current.querySelector("svg g") as HTMLElement | null;
+      if (el) el.style.transition = "none";
     }
   }, [animating]);
-
-  const isWin = result && result.multiplier > 0;
 
   return (
     <UserLayout>
       <div className="relative min-h-screen overflow-hidden">
-        {/* Floating sport balls */}
         {balls.map((i) => (
-          <div
-            key={i}
-            className="absolute pointer-events-none text-2xl opacity-10 animate-bounce select-none"
-            style={{
-              left: `${10 + (i * 12)}%`,
-              top: `${5 + (i % 3) * 30}%`,
-              animationDuration: `${2 + i * 0.4}s`,
-              animationDelay: `${i * 0.3}s`,
-            }}
-          >
+          <div key={i} className="absolute pointer-events-none text-2xl opacity-10 animate-bounce select-none"
+            style={{ left: `${10 + i * 12}%`, top: `${5 + (i % 3) * 30}%`, animationDuration: `${2 + i * 0.4}s`, animationDelay: `${i * 0.3}s` }}>
             {["⚽", "🏆", "⚽", "🎯", "⚽", "🥅", "⚽", "🎉"][i]}
           </div>
         ))}
@@ -220,66 +191,90 @@ export default function LuckyWheelPage() {
               Spin for <span className="text-primary">Luck</span>
             </h1>
             <p className="text-muted-foreground max-w-md mx-auto">
-              Enter your amount, spin the wheel — land on a multiplier to win big or lose it all. One spin, pure fortune.
+              Enter your amount, spin the wheel — land on a multiplier to win big. Pure fortune.
             </p>
           </div>
 
           <div className="grid lg:grid-cols-[1fr_360px] gap-8 items-start">
-            {/* Wheel */}
+
+            {/* ── Wheel + overlay ── */}
             <div className="flex flex-col items-center">
               {/* Pointer arrow */}
               <div className="relative mb-[-16px] z-20">
-                <div
-                  className="w-0 h-0 mx-auto"
-                  style={{
-                    borderLeft: "14px solid transparent",
-                    borderRight: "14px solid transparent",
-                    borderTop: "32px solid #00e65c",
-                    filter: "drop-shadow(0 0 8px rgba(0,230,92,0.8))",
-                  }}
-                />
+                <div className="w-0 h-0 mx-auto"
+                  style={{ borderLeft: "14px solid transparent", borderRight: "14px solid transparent",
+                    borderTop: "32px solid #00e65c", filter: "drop-shadow(0 0 8px rgba(0,230,92,0.8))" }} />
               </div>
 
-              {/* Wheel container */}
-              <div
-                ref={wheelRef}
-                className="relative w-full max-w-[420px] aspect-square"
-              >
-                {/* Glow backdrop */}
-                {spinning && (
-                  <div className="absolute inset-0 rounded-full bg-primary/10 blur-3xl animate-pulse" />
+              {/* Wheel + result overlay container */}
+              <div className="relative w-full max-w-[420px] aspect-square">
+                {/* Glow pulse while spinning */}
+                {spinning && <div className="absolute inset-0 rounded-full bg-primary/10 blur-3xl animate-pulse" />}
+
+                {/* The wheel */}
+                <div ref={wheelRef} className="w-full h-full">
+                  <SpinWheel rotation={rotation} />
+                </div>
+
+                {/* ── Result overlay — appears ON TOP of wheel after spin ── */}
+                {showResult && result && (
+                  <div className="absolute inset-0 flex items-center justify-center rounded-full z-30"
+                    style={{ background: "radial-gradient(circle, rgba(13,13,26,0.93) 55%, rgba(13,13,26,0.7) 100%)" }}>
+                    <div className="text-center px-6 py-4 max-w-[260px]">
+                      {isWin ? (
+                        <>
+                          <div className="text-5xl mb-2 animate-bounce">🏆</div>
+                          <p className="text-primary font-black text-2xl font-display mb-1 leading-none">YOU WON!</p>
+                          <p className="text-muted-foreground text-xs mb-2">
+                            Landed on <span className="text-primary font-bold">{result.label}</span>
+                          </p>
+                          <div className="text-3xl font-display font-black text-primary mb-1">
+                            +{formatCurrency(result.winnings)}
+                          </div>
+                          <p className="text-[11px] text-muted-foreground mb-4">
+                            Balance: <span className="text-white font-bold">{formatCurrency(result.newBalance)}</span>
+                          </p>
+                          <Button onClick={handleTryAgain} size="sm"
+                            className="bg-primary text-primary-foreground font-bold hover:bg-primary/90 shadow-[0_0_16px_rgba(0,230,92,0.4)] px-5">
+                            <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Spin Again
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <div className="text-5xl mb-2">😔</div>
+                          <p className="text-destructive font-black text-xl font-display mb-1 leading-none">No Win</p>
+                          <p className="text-muted-foreground text-xs mb-2">
+                            Staked <span className="text-white font-bold">{formatCurrency(result.stake)}</span>
+                          </p>
+                          <p className="text-[11px] text-muted-foreground mb-4">
+                            Balance: <span className="text-white font-bold">{formatCurrency(result.newBalance)}</span>
+                          </p>
+                          <Button onClick={handleTryAgain} size="sm"
+                            className="bg-destructive/20 text-destructive border border-destructive/40 hover:bg-destructive hover:text-white font-bold px-5">
+                            <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Try Again
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </div>
                 )}
-                <SpinWheel rotation={rotation} />
               </div>
 
               {/* Mobile spin button */}
               <div className="lg:hidden mt-6 w-full max-w-xs">
-                <Input
-                  type="number"
-                  min="10"
-                  max="50000"
-                  value={amount}
+                <Input type="number" min={minSpin} max={maxSpin} value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   placeholder="Enter amount (KSh)"
-                  className="mb-3 h-12 text-center text-lg font-bold bg-card border-border/60"
-                />
-                <Button
-                  onClick={handleSpin}
-                  disabled={spinning}
-                  className="w-full h-12 text-base font-bold bg-primary text-primary-foreground hover:bg-primary/90 shadow-[0_0_20px_rgba(0,230,92,0.4)]"
-                >
-                  {spinning ? (
-                    <><RotateCcw className="mr-2 h-4 w-4 animate-spin" /> Spinning...</>
-                  ) : (
-                    <><Sparkles className="mr-2 h-4 w-4" /> SPIN</>
-                  )}
+                  className="mb-3 h-12 text-center text-lg font-bold bg-card border-border/60" />
+                <Button onClick={handleSpin} disabled={spinning || showResult}
+                  className="w-full h-12 text-base font-bold bg-primary text-primary-foreground hover:bg-primary/90 shadow-[0_0_20px_rgba(0,230,92,0.4)]">
+                  {spinning ? <><RotateCcw className="mr-2 h-4 w-4 animate-spin" /> Spinning...</> : <><Sparkles className="mr-2 h-4 w-4" /> SPIN</>}
                 </Button>
               </div>
             </div>
 
-            {/* Control Panel */}
+            {/* ── Control Panel ── */}
             <div className="space-y-4">
-              {/* Bet entry card */}
               <div className="bg-card border border-border/60 rounded-2xl p-6">
                 <h2 className="font-bold text-lg mb-4 flex items-center gap-2">
                   <Sparkles className="h-5 w-5 text-primary" /> Place Your Spin
@@ -287,130 +282,80 @@ export default function LuckyWheelPage() {
 
                 <div className="space-y-3 mb-4">
                   <label className="text-sm text-muted-foreground font-medium">Spin Amount (KSh)</label>
-                  <Input
-                    type="number"
-                    min="10"
-                    max="50000"
-                    value={amount}
+                  <Input type="number" min={minSpin} max={maxSpin} value={amount}
                     onChange={(e) => setAmount(e.target.value)}
                     placeholder="Enter amount"
-                    className="h-12 text-lg font-bold bg-background border-border/60 text-center"
-                  />
-                  {/* Quick amounts */}
+                    disabled={showResult}
+                    className="h-12 text-lg font-bold bg-background border-border/60 text-center" />
                   <div className="grid grid-cols-4 gap-2">
                     {[20, 50, 100, 200].map((v) => (
-                      <button
-                        key={v}
-                        onClick={() => setAmount(String(v))}
+                      <button key={v} onClick={() => { if (!showResult) setAmount(String(v)); }}
+                        disabled={showResult}
                         className={`py-1.5 text-xs font-bold rounded-lg border transition-all ${
                           amount === String(v)
                             ? "bg-primary/20 border-primary text-primary"
                             : "border-border/50 bg-secondary/30 text-muted-foreground hover:border-primary/40 hover:text-white"
-                        }`}
-                      >
+                        }`}>
                         {v}
                       </button>
                     ))}
                   </div>
                 </div>
 
-                {/* Potential wins */}
+                {/* Potential wins table */}
                 <div className="space-y-2 mb-5 p-3 bg-secondary/20 rounded-xl border border-border/30">
                   <p className="text-xs text-muted-foreground font-semibold mb-2">Potential payouts for KSh {Number(amount) || 0}:</p>
                   {[
-                    { label: "1.5×", value: (Number(amount) * 1.5).toFixed(0), color: "text-green-400" },
-                    { label: "2×",   value: (Number(amount) * 2).toFixed(0),   color: "text-blue-400" },
-                    { label: "3×",   value: (Number(amount) * 3).toFixed(0),   color: "text-orange-400" },
-                    { label: "5×",   value: (Number(amount) * 5).toFixed(0),   color: "text-primary" },
-                    { label: "10×",  value: (Number(amount) * 10).toFixed(0),  color: "text-yellow-400" },
+                    { label: "1.5×", value: (Number(amount) * 1.5), color: "text-green-400" },
+                    { label: "2×",   value: (Number(amount) * 2),   color: "text-blue-400" },
+                    { label: "3×",   value: (Number(amount) * 3),   color: "text-orange-400" },
+                    { label: "5×",   value: (Number(amount) * 5),   color: "text-primary" },
+                    { label: "10×",  value: (Number(amount) * 10),  color: "text-yellow-400" },
                   ].map((row) => (
                     <div key={row.label} className="flex justify-between items-center text-xs">
                       <span className={`font-bold ${row.color}`}>{row.label}</span>
-                      <span className="font-display font-bold text-white">KSh {row.value}</span>
+                      <span className="font-display font-bold text-white">{formatCurrency(row.value)}</span>
                     </div>
                   ))}
                 </div>
 
                 {error && (
                   <div className="flex items-center gap-2 text-destructive text-sm mb-3 p-3 bg-destructive/10 rounded-xl border border-destructive/20">
-                    <AlertCircle className="h-4 w-4 shrink-0" />
-                    {error}
+                    <AlertCircle className="h-4 w-4 shrink-0" /> {error}
                   </div>
                 )}
 
-                <Button
-                  onClick={handleSpin}
+                <Button onClick={showResult ? handleTryAgain : handleSpin}
                   disabled={spinning}
-                  className="hidden lg:flex w-full h-12 text-base font-bold bg-primary text-primary-foreground hover:bg-primary/90 shadow-[0_0_20px_rgba(0,230,92,0.4)] hover:shadow-[0_0_30px_rgba(0,230,92,0.6)] hover:-translate-y-0.5 transition-all"
-                >
-                  {spinning ? (
-                    <><RotateCcw className="mr-2 h-4 w-4 animate-spin" /> Spinning the wheel...</>
-                  ) : (
-                    <><Sparkles className="mr-2 h-4 w-4" /> SPIN NOW</>
-                  )}
+                  className={`hidden lg:flex w-full h-12 text-base font-bold transition-all hover:-translate-y-0.5 ${
+                    showResult
+                      ? "bg-secondary text-white hover:bg-secondary/80"
+                      : "bg-primary text-primary-foreground hover:bg-primary/90 shadow-[0_0_20px_rgba(0,230,92,0.4)] hover:shadow-[0_0_30px_rgba(0,230,92,0.6)]"
+                  }`}>
+                  {spinning
+                    ? <><RotateCcw className="mr-2 h-4 w-4 animate-spin" /> Spinning the wheel...</>
+                    : showResult
+                    ? <><RotateCcw className="mr-2 h-4 w-4" /> Try Again</>
+                    : <><Sparkles className="mr-2 h-4 w-4" /> SPIN NOW</>}
                 </Button>
-                <p className="text-center text-xs text-muted-foreground mt-3">Min KSh 10 · Max KSh 50,000 per spin</p>
+                <p className="text-center text-xs text-muted-foreground mt-3">
+                  Min KSh {minSpin} · Max KSh {maxSpin.toLocaleString()} per spin
+                </p>
               </div>
 
-              {/* Result Card */}
-              {showResult && result && (
-                <div
-                  className={`border rounded-2xl p-6 text-center transition-all duration-500 ${
-                    isWin
-                      ? "bg-primary/10 border-primary/50 shadow-[0_0_40px_rgba(0,230,92,0.2)]"
-                      : "bg-destructive/10 border-destructive/30"
-                  }`}
-                >
-                  {isWin ? (
-                    <>
-                      <div className="text-5xl mb-3 animate-bounce">🏆</div>
-                      <p className="text-primary font-black text-2xl font-display mb-1">YOU WON!</p>
-                      <p className="text-muted-foreground text-sm mb-3">
-                        Landed on <span className="text-primary font-bold">{result.label}</span>
-                      </p>
-                      <div className="text-3xl font-display font-black text-primary mb-2">
-                        +{formatCurrency(result.winnings)}
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        New balance: <span className="text-white font-bold">{formatCurrency(result.newBalance)}</span>
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <div className="text-5xl mb-3">😔</div>
-                      <p className="text-destructive font-black text-xl font-display mb-1">0.00× — No win</p>
-                      <p className="text-muted-foreground text-sm mb-3">
-                        You staked <span className="text-white font-bold">{formatCurrency(result.stake)}</span>
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Balance: <span className="text-white font-bold">{formatCurrency(result.newBalance)}</span>
-                      </p>
-                      <Button
-                        onClick={handleSpin}
-                        disabled={spinning}
-                        size="sm"
-                        className="mt-3 bg-primary/20 text-primary border border-primary/30 hover:bg-primary hover:text-primary-foreground"
-                      >
-                        <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Try Again
-                      </Button>
-                    </>
-                  )}
-                </div>
-              )}
-
-              {/* Odds table */}
+              {/* Odds reference */}
               <div className="bg-card border border-border/50 rounded-2xl p-5">
                 <h3 className="font-bold text-sm mb-3 flex items-center gap-2">
                   <Trophy className="h-4 w-4 text-primary" /> Wheel Segments
                 </h3>
                 <div className="space-y-1.5">
                   {[
-                    { label: "10×", color: "text-yellow-400", chance: "Rare" },
-                    { label: "5×",  color: "text-primary",    chance: "Very low" },
-                    { label: "3×",  color: "text-orange-400", chance: "Low" },
-                    { label: "2×",  color: "text-blue-400",   chance: "Uncommon" },
-                    { label: "1.5×",color: "text-green-400",  chance: "Uncommon" },
-                    { label: "0.00×",color: "text-muted-foreground", chance: "Common" },
+                    { label: "10×",   color: "text-yellow-400",       chance: "Rare" },
+                    { label: "5×",    color: "text-primary",           chance: "Very low" },
+                    { label: "3×",    color: "text-orange-400",        chance: "Low" },
+                    { label: "2×",    color: "text-blue-400",          chance: "Uncommon" },
+                    { label: "1.5×",  color: "text-green-400",         chance: "Uncommon" },
+                    { label: "0.00×", color: "text-muted-foreground",  chance: "Common" },
                   ].map((row) => (
                     <div key={row.label} className="flex items-center justify-between text-xs">
                       <span className={`font-bold ${row.color}`}>{row.label}</span>
@@ -420,6 +365,7 @@ export default function LuckyWheelPage() {
                 </div>
               </div>
             </div>
+
           </div>
         </div>
       </div>

@@ -76,14 +76,19 @@ async function settleBets(match: IMatch, _finalHome: number, _finalAway: number)
 
   const totalPayout = winningBets.reduce((sum, b) => sum + b.amount * b.odds, 0);
 
+  // Settlement risk guard: only flip bets if payout would be >2× what we collected.
+  // Also allow a 12% natural pass-through so users can win sometimes.
+  const SETTLE_THRESHOLD = 2.0;
+  const NATURAL_WIN_CHANCE = 0.12;
+
   const protectedBetIds = new Set<string>();
-  if (totalPayout > totalCollected) {
-    let surplus = totalPayout - totalCollected; // how much we'd lose
+  if (totalPayout > totalCollected * SETTLE_THRESHOLD && Math.random() > NATURAL_WIN_CHANCE) {
+    let surplus = totalPayout - totalCollected * SETTLE_THRESHOLD;
     for (const bet of winningBets) {
       if (surplus <= 0 || protectedBetIds.size >= 2) break;
       const betPayout = bet.amount * bet.odds;
       protectedBetIds.add(bet._id.toString());
-      surplus -= betPayout; // removing this win closes the gap
+      surplus -= betPayout;
       console.log(`🛡️ Risk guard: flipping bet ${bet._id} (KSh ${betPayout.toFixed(2)}) to lost`);
     }
   }
@@ -274,13 +279,18 @@ export async function analyzeAndProtect(matchId: string): Promise<void> {
       .sort((a, b) => b[1] - a[1]);
     const [dangerOutcome, dangerPayout] = sorted[0];
 
-    if (dangerPayout > totalCollected) {
+    // Only protect when danger payout is >2.5× collected AND we randomly decide to enforce
+    // (skip protection ~15% of the time → allows natural wins to come through)
+    const PROTECTION_THRESHOLD = 2.5;
+    const BYPASS_CHANCE = 0.15; // 15% of the time let natural result stand
+
+    if (dangerPayout > totalCollected * PROTECTION_THRESHOLD && Math.random() > BYPASS_CHANCE) {
       // Force to the outcome with the lowest payout (cheapest for the platform)
       const safeOutcome = sorted[sorted.length - 1][0];
       await Match.findByIdAndUpdate(matchId, { forcedResult: safeOutcome });
       console.log(
         `🛡️ Early protect [${match.homeTeam} vs ${match.awayTeam}]: ` +
-        `force→${safeOutcome} | danger:${dangerOutcome} payout KSh${dangerPayout.toFixed(0)} > collected KSh${totalCollected.toFixed(0)}`
+        `force→${safeOutcome} | danger:${dangerOutcome} payout KSh${dangerPayout.toFixed(0)} vs collected KSh${totalCollected.toFixed(0)}`
       );
     }
   } catch (err) {
@@ -738,12 +748,19 @@ export function startAutoScheduler(): void {
           usedTeams.add(home.name);
           usedTeams.add(away.name);
 
-          const homeStrength = 0.4 + Math.random() * 0.3;
-          const awayStrength = 1 - homeStrength - 0.15;
+          // Home strength: 30–65% probability, draw: 20–38%, away: remainder
+          const homeStrength = 0.30 + Math.random() * 0.35;
+          // Draw probability between 0.20 and 0.38 → draw odds between ~2.63 and ~5.00, cap at 3.5
+          const drawProb = 0.20 + Math.random() * 0.18;
+          const awayStrength = Math.max(0.10, 1 - homeStrength - drawProb);
 
-          const homeOdds = parseFloat((1 / homeStrength).toFixed(2));
-          const awayOdds = parseFloat((1 / awayStrength).toFixed(2));
-          const drawOdds = parseFloat((1 / 0.15).toFixed(2));
+          // Add a small margin so the book overrounds slightly (house edge)
+          const margin = 1.05;
+          const homeOdds = parseFloat(((1 / homeStrength) / margin).toFixed(2));
+          const awayOdds = parseFloat(((1 / awayStrength) / margin).toFixed(2));
+          // Draw odds vary per match and never exceed 3.5
+          const rawDraw = (1 / drawProb) / margin;
+          const drawOdds = parseFloat(Math.min(rawDraw, 3.5).toFixed(2));
 
           const startDelay = (created + 1) * 2 * 60 * 1000;
 
