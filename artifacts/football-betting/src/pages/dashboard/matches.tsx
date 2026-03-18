@@ -481,9 +481,16 @@ function SlipPanel({ slip, open, onClose, onRemove, onClear, onSuccess }: {
   const config = usePublicConfig();
   const minBet = config.minBet;
   const maxBet = config.maxBetAmount;
-  const [stake, setStake] = useState(() => String(config.minBet > 50 ? config.minBet : 50));
+  const [stake, setStake] = useState(String(minBet));
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  useEffect(() => {
+    setStake((prev) => {
+      const n = parseFloat(prev) || 0;
+      return n < minBet ? String(minBet) : prev;
+    });
+  }, [minBet]);
 
   const combinedOdds = slip.reduce((acc, s) => acc * s.odds, 1);
   const numStake = parseFloat(stake) || 0;
@@ -547,14 +554,16 @@ function SlipPanel({ slip, open, onClose, onRemove, onClear, onSuccess }: {
             <Input type="number" min={minBet} max={maxBet} value={stake} onChange={(e) => setStake(e.target.value)}
               className="text-lg font-bold h-12 bg-background border-border mt-1" />
             <div className="flex gap-2 mt-2">
-              {[minBet, Math.max(minBet, 50), 100, 500].filter((v, i, a) => a.indexOf(v) === i).map((val) => (
-                <button key={val} onClick={() => setStake(val.toString())}
-                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg border transition-all ${
-                    stake === String(val) ? "bg-primary/20 border-primary text-primary" : "border-border/50 bg-secondary/30 text-muted-foreground hover:border-primary/40"
-                  }`}>
-                  {val}
-                </button>
-              ))}
+              {[minBet, minBet * 2, minBet * 5, minBet * 10]
+                .filter((v, i, a) => a.indexOf(v) === i && v <= maxBet)
+                .map((val) => (
+                  <button key={val} onClick={() => setStake(val.toString())}
+                    className={`flex-1 py-1.5 text-xs font-bold rounded-lg border transition-all ${
+                      stake === String(val) ? "bg-primary/20 border-primary text-primary" : "border-border/50 bg-secondary/30 text-muted-foreground hover:border-primary/40"
+                    }`}>
+                    {val}
+                  </button>
+                ))}
             </div>
           </div>
 
@@ -571,7 +580,7 @@ function SlipPanel({ slip, open, onClose, onRemove, onClear, onSuccess }: {
               <span className="text-muted-foreground">Potential Win</span>
               <span className="text-xl font-display font-black text-primary">{formatCurrency(potentialWin)}</span>
             </div>
-            {numStake >= 5 && (
+            {numStake >= minBet && (
               <div className="flex justify-between items-center bg-primary/5 border border-primary/20 rounded-lg px-3 py-2 -mx-1">
                 <span className="text-xs text-muted-foreground">If lost — 50% refunded</span>
                 <span className="text-xs font-bold text-primary">+{formatCurrency(numStake * 0.5)} back</span>
@@ -582,7 +591,7 @@ function SlipPanel({ slip, open, onClose, onRemove, onClear, onSuccess }: {
           <div className="flex gap-3">
             <Button variant="outline" className="flex-1" onClick={onClear} disabled={placeMutation.isPending}>Clear All</Button>
             <Button className="flex-1 h-12 font-bold bg-primary text-primary-foreground hover:bg-primary/90"
-              onClick={handlePlace} disabled={placeMutation.isPending || numStake < 5}>
+              onClick={handlePlace} disabled={placeMutation.isPending || numStake < minBet || numStake > maxBet}>
               {placeMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : "Place Slip"}
             </Button>
           </div>
