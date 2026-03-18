@@ -121,32 +121,34 @@ export default function TransactionsPage() {
         ) : (
           <div className="divide-y divide-border/30">
             {data.transactions.map((tx, idx) => {
-              const isCredit = tx.amount > 0;
-              const typeMap: Record<string, { label: string; color: string }> = {
-                deposit:     { label: "Deposit",      color: "text-sky-400" },
-                withdrawal:  { label: "Withdrawal",   color: "text-amber-400" },
-                bet:         { label: "Bet Placed",   color: "text-violet-400" },
-                winnings:    { label: "Winnings",     color: "text-primary" },
-                refund:      { label: "Refund",       color: "text-blue-400" },
-                referral:    { label: "Referral",     color: "text-pink-400" },
-                spin_stake:  { label: "Wheel Spin",   color: "text-violet-400" },
-                spin_win:    { label: "Wheel Win",    color: "text-yellow-400" },
+              const DEBIT_TYPES = ["withdrawal", "bet", "spin_stake"];
+              const isCredit = !DEBIT_TYPES.includes(tx.type);
+
+              const typeMap: Record<string, { label: string; icon: string; iconBg: string }> = {
+                deposit:        { label: "Deposit",     icon: "↓",  iconBg: "bg-sky-500/15 text-sky-400 border-sky-500/20" },
+                withdrawal:     { label: "Withdrawal",  icon: "↑",  iconBg: "bg-amber-500/15 text-amber-400 border-amber-500/20" },
+                bet:            { label: "Bet",         icon: "⚽", iconBg: "bg-violet-500/15 text-violet-400 border-violet-500/20" },
+                winnings:       { label: "Winnings",    icon: "🏆", iconBg: "bg-primary/15 text-primary border-primary/20" },
+                refund:         { label: "Refund",      icon: "↩",  iconBg: "bg-blue-500/15 text-blue-400 border-blue-500/20" },
+                referral_bonus: { label: "Referral",    icon: "🎁", iconBg: "bg-pink-500/15 text-pink-400 border-pink-500/20" },
+                spin_stake:     { label: "Wheel Spin",  icon: "🎡", iconBg: "bg-violet-500/15 text-violet-400 border-violet-500/20" },
+                spin_win:       { label: "Wheel Win",   icon: "⭐", iconBg: "bg-yellow-500/15 text-yellow-400 border-yellow-500/20" },
+                adjustment:     { label: "Adjustment",  icon: "⚙",  iconBg: "bg-gray-500/15 text-gray-400 border-gray-500/20" },
               };
-              const typeInfo = typeMap[tx.type] ?? { label: tx.type, color: "text-muted-foreground" };
+              const typeInfo = typeMap[tx.type] ?? { label: tx.type, icon: "•", iconBg: "bg-muted/15 text-muted-foreground border-border/20" };
 
               return (
-                <div key={tx.id} className="flex items-center gap-4 px-5 py-3.5 hover:bg-secondary/20 transition-colors">
-                  {/* Index */}
-                  <span className="text-[10px] text-muted-foreground/50 w-4 shrink-0 font-mono">{idx + 1}</span>
-
-                  {/* Type indicator dot */}
-                  <div className={`w-2 h-2 rounded-full shrink-0 ${isCredit ? "bg-primary" : "bg-destructive"}`} />
+                <div key={tx.id} className="flex items-center gap-3 px-4 py-3 hover:bg-white/[0.02] transition-colors">
+                  {/* Icon badge */}
+                  <div className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 text-base ${typeInfo.iconBg}`}>
+                    {typeInfo.icon}
+                  </div>
 
                   {/* Details */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className={`text-[10px] font-black uppercase tracking-widest ${typeInfo.color}`}>{typeInfo.label}</span>
-                      <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${
+                      <span className="text-sm font-semibold text-white">{typeInfo.label}</span>
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wide ${
                         tx.status === "completed"
                           ? "bg-green-500/10 text-green-400"
                           : tx.status === "pending"
@@ -154,17 +156,15 @@ export default function TransactionsPage() {
                           : "bg-red-500/10 text-red-400"
                       }`}>{tx.status}</span>
                     </div>
-                    <p className="text-xs text-muted-foreground truncate mt-0.5 max-w-xs">
+                    <p className="text-xs text-muted-foreground truncate mt-0.5">
                       {tx.description || "—"}
                     </p>
+                    <p className="text-[10px] text-muted-foreground/50 mt-0.5">{formatDate(tx.createdAt)}</p>
                   </div>
 
-                  {/* Amount + date */}
-                  <div className="text-right shrink-0">
-                    <p className={`font-display font-bold text-sm ${isCredit ? "text-primary" : "text-destructive"}`}>
-                      {isCredit ? "+" : ""}{formatCurrency(tx.amount)}
-                    </p>
-                    <p className="text-[10px] text-muted-foreground/60 mt-0.5">{formatDate(tx.createdAt)}</p>
+                  {/* Amount */}
+                  <div className={`text-right shrink-0 font-display font-bold text-base ${isCredit ? "text-primary" : "text-destructive"}`}>
+                    {isCredit ? "+" : "−"}{formatCurrency(Math.abs(tx.amount))}
                   </div>
                 </div>
               );
