@@ -20,8 +20,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Input } from "@/components/ui/input";
 import {
   Loader2, Clock, CheckCircle2, XCircle, Trash2, ChevronRight,
-  Receipt, Wallet, History, Trophy, Bell, Sparkles, ArrowDownToLine, ArrowUpFromLine,
-  TrendingUp, Activity,
+  Receipt, Wallet, Sparkles, ArrowDownToLine, ArrowUpFromLine, Activity,
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency, formatRelativeTime, formatDate } from "@/lib/format";
@@ -56,12 +55,6 @@ function Countdown({ targetDate, label = "" }: { targetDate: string; label?: str
 
 // ─── Feature Quick-Access Panel ────────────────────────────────────────────────
 function FeaturePanel({ balance }: { balance: number }) {
-  const miniTiles = [
-    { href: "/dashboard/my-bets", icon: History, label: "My Bets", sub: "All slips", color: "text-violet-400", bg: "bg-violet-500/15 border-violet-500/30 hover:bg-violet-500/25" },
-    { href: "/dashboard/leaderboard", icon: Trophy, label: "Leaderboard", sub: "Top earners", color: "text-yellow-400", bg: "bg-yellow-500/15 border-yellow-500/30 hover:bg-yellow-500/25" },
-    { href: "/dashboard/notifications", icon: Bell, label: "Alerts", sub: "Notifications", color: "text-pink-400", bg: "bg-pink-500/15 border-pink-500/30 hover:bg-pink-500/25" },
-    { href: "/dashboard/transactions", icon: TrendingUp, label: "Wallet", sub: "Transactions", color: "text-sky-400", bg: "bg-sky-500/15 border-sky-500/30 hover:bg-sky-500/25" },
-  ];
 
   return (
     <div className="mb-8 space-y-4">
@@ -139,21 +132,6 @@ function FeaturePanel({ balance }: { balance: number }) {
         </div>
       </Link>
 
-      {/* ── Mini nav tiles ── */}
-      <div className="grid grid-cols-4 gap-2.5">
-        {miniTiles.map((tile) => {
-          const Icon = tile.icon;
-          return (
-            <Link key={tile.href} href={tile.href}>
-              <div className={`relative rounded-xl border ${tile.bg} p-3 cursor-pointer transition-all duration-200 hover:-translate-y-0.5 flex flex-col items-center gap-1.5 text-center`}>
-                <Icon className={`h-5 w-5 ${tile.color}`} />
-                <p className={`font-bold text-[11px] ${tile.color} leading-none`}>{tile.label}</p>
-                <p className="text-[9px] text-white/40 leading-none hidden sm:block">{tile.sub}</p>
-              </div>
-            </Link>
-          );
-        })}
-      </div>
     </div>
   );
 }
@@ -213,22 +191,19 @@ export default function MatchesPage() {
       {/* Feature overview panel */}
       <FeaturePanel balance={balance} />
 
-      {/* Match Center header */}
-      <div className="flex items-center justify-between mb-5">
+      {/* Match Centre header */}
+      <div className="flex flex-col items-center text-center mb-6 gap-2">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-sky-500/20 border border-sky-500/30 flex items-center justify-center">
-            <Activity className="h-5 w-5 text-sky-400" />
+          <div className="w-11 h-11 rounded-xl bg-sky-500/20 border border-sky-500/30 flex items-center justify-center">
+            <Activity className="h-6 w-6 text-sky-400" />
           </div>
-          <div>
-            <h2 className="text-xl font-display font-bold text-white leading-none">Match Centre</h2>
-            <p className="text-xs text-muted-foreground">Click an outcome to add to your slip</p>
-          </div>
+          <h2 className="text-2xl sm:text-3xl font-display font-bold text-white leading-none">Match Centre</h2>
         </div>
-
+        <p className="text-sm text-muted-foreground">Click an outcome to add it to your bet slip</p>
         {slip.length > 0 && (
           <Button
             onClick={() => setSlipOpen(true)}
-            className="bg-primary text-primary-foreground font-bold shadow-[0_0_20px_rgba(0,230,92,0.35)] animate-pulse h-10 px-4"
+            className="mt-1 bg-primary text-primary-foreground font-bold shadow-[0_0_20px_rgba(0,230,92,0.35)] animate-pulse h-10 px-5"
           >
             <Receipt className="w-4 h-4 mr-2" />
             Slip ({slip.length}) · {combinedOdds.toFixed(2)}×
