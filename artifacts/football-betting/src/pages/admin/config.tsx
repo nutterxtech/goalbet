@@ -22,6 +22,8 @@ interface ConfigForm {
   maxBetAmount: number;
   consolationRefundPercent: number;
   referralRewardAmount: number;
+  minSpinAmount: number;
+  maxSpinAmount: number;
 }
 
 interface MpesaForm {
@@ -31,6 +33,8 @@ interface MpesaForm {
   mpesaPasskey: string;
   mpesaCallbackUrl: string;
   mpesaEnvironment: "sandbox" | "production";
+  mpesaInitiatorName: string;
+  mpesaInitiatorPassword: string;
 }
 
 interface PesapalForm {
@@ -87,9 +91,11 @@ export default function AdminConfig() {
         mpesaShortCode: (data as any).mpesaShortCode || "",
         mpesaCallbackUrl: (data as any).mpesaCallbackUrl || "",
         mpesaEnvironment: (data as any).mpesaEnvironment || "sandbox",
+        mpesaInitiatorName: (data as any).mpesaInitiatorName || "",
         mpesaConsumerKey: "",
         mpesaConsumerSecret: "",
         mpesaPasskey: "",
+        mpesaInitiatorPassword: "",
       });
       pesapalForm.reset({
         pesapalCallbackUrl: (data as any).pesapalCallbackUrl || "",
@@ -114,6 +120,8 @@ export default function AdminConfig() {
         maxBetAmount: Number(values.maxBetAmount),
         consolationRefundPercent: Number(values.consolationRefundPercent),
         referralRewardAmount: Number(values.referralRewardAmount),
+        minSpinAmount: Number(values.minSpinAmount),
+        maxSpinAmount: Number(values.maxSpinAmount),
       } as any);
       queryClient.invalidateQueries();
       toast({ title: "Config updated", description: "Platform configuration saved." });
@@ -129,15 +137,18 @@ export default function AdminConfig() {
         mpesaShortCode: values.mpesaShortCode,
         mpesaCallbackUrl: values.mpesaCallbackUrl,
         mpesaEnvironment: values.mpesaEnvironment,
+        mpesaInitiatorName: values.mpesaInitiatorName,
         ...(values.mpesaConsumerKey ? { mpesaConsumerKey: values.mpesaConsumerKey } : {}),
         ...(values.mpesaConsumerSecret ? { mpesaConsumerSecret: values.mpesaConsumerSecret } : {}),
         ...(values.mpesaPasskey ? { mpesaPasskey: values.mpesaPasskey } : {}),
+        ...(values.mpesaInitiatorPassword ? { mpesaInitiatorPassword: values.mpesaInitiatorPassword } : {}),
       } as any);
       queryClient.invalidateQueries();
       toast({ title: "M-Pesa credentials saved", description: "Daraja API configured successfully." });
       mpesaForm.setValue("mpesaConsumerKey", "");
       mpesaForm.setValue("mpesaConsumerSecret", "");
       mpesaForm.setValue("mpesaPasskey", "");
+      mpesaForm.setValue("mpesaInitiatorPassword", "");
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally {
@@ -214,6 +225,8 @@ export default function AdminConfig() {
     { key: "withdrawalFeePercent", label: "Withdrawal Fee (%)", desc: "Platform fee on withdrawals" },
     { key: "consolationRefundPercent", label: "Consolation Refund (%)", desc: "Percentage of stake refunded when a slip loses (e.g. 50 = 50% back)" },
     { key: "referralRewardAmount", label: "Referral Reward (KSh)", desc: "Bonus credited to a user when their referral makes their first deposit" },
+    { key: "minSpinAmount", label: "Minimum Spin Amount (KSh)", desc: "Lowest stake allowed on the Lucky Wheel" },
+    { key: "maxSpinAmount", label: "Maximum Spin Amount (KSh)", desc: "Highest stake allowed on the Lucky Wheel" },
     { key: "bettingWindowMinutes", label: "Betting Window (minutes)", desc: "How long betting is open before a match starts" },
     { key: "matchDurationSeconds", label: "Match Duration (seconds)", desc: "Real-time seconds a simulated 90-minute match takes" },
   ];
@@ -222,6 +235,7 @@ export default function AdminConfig() {
   const keySet = (data as any)?.mpesaConsumerKeySet;
   const secretSet = (data as any)?.mpesaConsumerSecretSet;
   const passkeySet = (data as any)?.mpesaPasskeySet;
+  const initiatorPasswordSet = (data as any)?.mpesaInitiatorPasswordSet;
   const pesapalConfigured = (data as any)?.pesapalConfigured;
   const ppKeySet = (data as any)?.pesapalConsumerKeySet;
   const ppSecretSet = (data as any)?.pesapalConsumerSecretSet;
@@ -398,6 +412,10 @@ export default function AdminConfig() {
                     <span className={`w-2 h-2 rounded-full ${passkeySet ? "bg-green-500" : "bg-zinc-600"}`} />
                     Passkey: {passkeySet ? "Set ✓" : "Not set"}
                   </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full ${initiatorPasswordSet ? "bg-green-500" : "bg-zinc-600"}`} />
+                    B2C Initiator Password: {initiatorPasswordSet ? "Set ✓" : "Not set"}
+                  </div>
                 </div>
                 <div className="space-y-3">
                   <div className="space-y-1">
@@ -427,6 +445,29 @@ export default function AdminConfig() {
                       className="bg-background border-border/50 text-white font-mono text-xs"
                     />
                   </div>
+                </div>
+              </div>
+
+              {/* B2C Withdrawal payout settings */}
+              <div className="border-t border-border/30 pt-4 space-y-3">
+                <p className="text-sm text-white font-medium">B2C Withdrawal Payout</p>
+                <p className="text-xs text-muted-foreground">Required for automatic M-Pesa payouts when you approve withdrawals</p>
+                <div className="space-y-1">
+                  <Label className="text-sm text-muted-foreground">Initiator Name</Label>
+                  <Input
+                    placeholder="e.g. testapi"
+                    {...mpesaForm.register("mpesaInitiatorName")}
+                    className="bg-background border-border/50 text-white font-mono text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-sm text-muted-foreground">Initiator Password (SecurityCredential) {initiatorPasswordSet && "(leave blank to keep current)"}</Label>
+                  <Input
+                    type={showMpesaSecrets ? "text" : "password"}
+                    placeholder={initiatorPasswordSet ? "••••••••" : "Enter B2C security credential"}
+                    {...mpesaForm.register("mpesaInitiatorPassword")}
+                    className="bg-background border-border/50 text-white font-mono text-xs"
+                  />
                 </div>
               </div>
 

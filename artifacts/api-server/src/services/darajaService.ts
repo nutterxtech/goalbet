@@ -121,7 +121,9 @@ export async function initiateB2C(
   amount: number,
   resultUrl: string,
   queueUrl: string,
-  remarks: string
+  remarks: string,
+  initiatorName?: string,
+  initiatorPassword?: string
 ): Promise<B2CResult> {
   const token = await getAccessToken(creds);
   const phone = phoneNumber.replace(/^\+?254|^0/, "254").replace(/\D/g, "");
@@ -129,8 +131,8 @@ export async function initiateB2C(
   const res = await axios.post(
     `${baseUrl(creds.environment)}/mpesa/b2c/v1/paymentrequest`,
     {
-      InitiatorName: "testapi",
-      SecurityCredential: creds.passkey,
+      InitiatorName: initiatorName || "testapi",
+      SecurityCredential: initiatorPassword || creds.passkey,
       CommandID: "BusinessPayment",
       Amount: Math.round(amount),
       PartyA: creds.shortCode,

@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/format";
 import {
   Users, Activity, DollarSign, Wallet, Trophy, AlertCircle,
-  TrendingUp, BarChart2, Zap, TrendingDown,
+  TrendingUp, BarChart2, Zap, TrendingDown, Percent,
 } from "lucide-react";
 
 export default function AdminOverview() {
@@ -18,7 +18,7 @@ export default function AdminOverview() {
       value: formatCurrency(d?.todayRevenue ?? 0),
       icon: TrendingUp,
       color: "text-primary",
-      desc: "Betting + Lucky Wheel net since midnight",
+      desc: "Betting + Lucky Wheel + withdrawal fees since midnight",
       highlight: true,
     },
     {
@@ -45,6 +45,14 @@ export default function AdminOverview() {
       desc: "Lucky Wheel stakes minus payouts",
       highlight: false,
     },
+    {
+      title: "Today's Withdrawal Fees",
+      value: formatCurrency(d?.todayWithdrawalFeeRevenue ?? 0),
+      icon: Percent,
+      color: "text-orange-400",
+      desc: "Fees charged on approved withdrawals today",
+      highlight: false,
+    },
   ];
 
   const allTimeCards = [
@@ -59,7 +67,7 @@ export default function AdminOverview() {
       value: formatCurrency(d?.platformRevenue ?? 0),
       icon: DollarSign,
       color: (d?.platformRevenue ?? 0) >= 0 ? "text-primary" : "text-red-400",
-      desc: "All-time betting + wheel net profit",
+      desc: "All-time betting + wheel + withdrawal fees",
     },
     {
       title: "Betting Revenue",
@@ -74,6 +82,13 @@ export default function AdminOverview() {
       icon: Zap,
       color: (d?.spinRevenue ?? 0) >= 0 ? "text-violet-400" : "text-red-400",
       desc: `KSh ${(d?.totalSpinStaked ?? 0).toLocaleString()} staked · KSh ${(d?.totalSpinWon ?? 0).toLocaleString()} won`,
+    },
+    {
+      title: "Withdrawal Fee Revenue",
+      value: formatCurrency(d?.withdrawalFeeRevenue ?? 0),
+      icon: Percent,
+      color: "text-orange-400",
+      desc: "All-time fees earned from approved withdrawals",
     },
     {
       title: "Total Bets",

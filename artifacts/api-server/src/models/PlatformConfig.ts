@@ -19,6 +19,8 @@ export interface IPlatformConfig extends Document {
   mpesaCallbackUrl: string;
   mpesaEnvironment: "sandbox" | "production";
   mpesaConfigured: boolean;
+  mpesaInitiatorName: string;
+  mpesaInitiatorPassword: string;
   pesapalConsumerKey: string;
   pesapalConsumerSecret: string;
   pesapalCallbackUrl: string;
@@ -49,6 +51,8 @@ const PlatformConfigSchema = new Schema<IPlatformConfig>(
     mpesaCallbackUrl: { type: String, default: "" },
     mpesaEnvironment: { type: String, enum: ["sandbox", "production"], default: "sandbox" },
     mpesaConfigured: { type: Boolean, default: false },
+    mpesaInitiatorName: { type: String, default: "" },
+    mpesaInitiatorPassword: { type: String, default: "" },
     pesapalConsumerKey: { type: String, default: "" },
     pesapalConsumerSecret: { type: String, default: "" },
     pesapalCallbackUrl: { type: String, default: "" },

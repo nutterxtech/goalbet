@@ -69,11 +69,40 @@ router.post("/", authenticate, async (req: AuthRequest, res) => {
     // Deduct stake first (site always collects the stake)
     user.balance -= amount;
 
-    const segmentIndex = pickSegment();
-    const segment = SEGMENTS[segmentIndex];
-    const winnings = parseFloat((amount * segment.multiplier).toFixed(2));
+    let segmentIndex = pickSegment();
+    let segment = SEGMENTS[segmentIndex];
+    let winnings = parseFloat((amount * segment.multiplier).toFixed(2));
 
-    // Credit winnings only if user won (site never goes negative — house edge built into weights)
+    // System balance safety check: never let the platform pay out more than it holds
+    if (winnings > 0) {
+      const [depositAgg, withdrawalAgg, winningsAgg, refundAgg, spinStakeAgg, spinWinAgg, betStakeAgg] = await Promise.all([
+        Transaction.aggregate([{ $match: { type: "deposit", status: "completed" } }, { $group: { _id: null, total: { $sum: "$amount" } } }]),
+        Transaction.aggregate([{ $match: { type: "withdrawal", status: "completed" } }, { $group: { _id: null, total: { $sum: "$netAmount" } } }]),
+        Transaction.aggregate([{ $match: { type: "winnings" } }, { $group: { _id: null, total: { $sum: "$amount" } } }]),
+        Transaction.aggregate([{ $match: { type: "refund" } }, { $group: { _id: null, total: { $sum: "$amount" } } }]),
+        Transaction.aggregate([{ $match: { type: "spin_stake", status: "completed" } }, { $group: { _id: null, total: { $sum: "$amount" } } }]),
+        Transaction.aggregate([{ $match: { type: "spin_win", status: "completed" } }, { $group: { _id: null, total: { $sum: "$amount" } } }]),
+        (await import("../models/BetSlip.js")).BetSlip.aggregate([{ $group: { _id: null, total: { $sum: "$stake" } } }]),
+      ]);
+      const platformBalance =
+        (depositAgg[0]?.total ?? 0) +
+        (spinStakeAgg[0]?.total ?? 0) +
+        (betStakeAgg[0]?.total ?? 0) +
+        amount - // current spin stake just deducted, counts as platform income
+        (withdrawalAgg[0]?.total ?? 0) -
+        (winningsAgg[0]?.total ?? 0) -
+        (refundAgg[0]?.total ?? 0) -
+        (spinWinAgg[0]?.total ?? 0);
+
+      if (platformBalance - winnings < 0) {
+        // Force a losing spin to protect platform funds
+        segmentIndex = 0;
+        segment = SEGMENTS[0];
+        winnings = 0;
+      }
+    }
+
+    // Credit winnings only if user won
     if (winnings > 0) {
       user.balance += winnings;
     }

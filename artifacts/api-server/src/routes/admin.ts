@@ -581,7 +581,9 @@ router.put("/withdrawals/:id", async (req: AuthRequest, res) => {
           tx.netAmount,
           `${callbackBase}/api/user/withdraw/mpesa/callback`,
           `${callbackBase}/api/user/withdraw/mpesa/timeout`,
-          `GoalBet withdrawal ${tx.id}`
+          `GoalBet withdrawal ${tx.id}`,
+          config.mpesaInitiatorName || undefined,
+          config.mpesaInitiatorPassword || undefined
         );
         console.log(`B2C sent to ${phone} for KSh ${tx.netAmount}`);
       } catch (b2cErr: any) {
@@ -626,6 +628,8 @@ router.get("/stats", async (req: AuthRequest, res) => {
     spinWinAgg,
     todaySpinStakeAgg,
     todaySpinWinAgg,
+    withdrawalFeeAgg,
+    todayWithdrawalFeeAgg,
   ] = await Promise.all([
     User.countDocuments({ role: "user" }),
     User.countDocuments({ role: "user", status: "active" }),
@@ -651,14 +655,17 @@ router.get("/stats", async (req: AuthRequest, res) => {
     Transaction.aggregate([{ $match: { type: "spin_win", status: "completed" } }, { $group: { _id: null, total: { $sum: "$amount" } } }]),
     Transaction.aggregate([{ $match: { type: "spin_stake", status: "completed", createdAt: { $gte: todayStart } } }, { $group: { _id: null, total: { $sum: "$amount" } } }]),
     Transaction.aggregate([{ $match: { type: "spin_win", status: "completed", createdAt: { $gte: todayStart } } }, { $group: { _id: null, total: { $sum: "$amount" } } }]),
+    // Withdrawal fees collected (fee field on completed withdrawals)
+    Transaction.aggregate([{ $match: { type: "withdrawal", status: "completed" } }, { $group: { _id: null, total: { $sum: "$fee" } } }]),
+    Transaction.aggregate([{ $match: { type: "withdrawal", status: "completed", createdAt: { $gte: todayStart } } }, { $group: { _id: null, total: { $sum: "$fee" } } }]),
   ]);
 
   // Betting revenue: stakes collected minus winnings paid minus consolation refunds
-  const totalBetAmount = slipStakeAgg[0]?.total ?? 0;          // actual KSh staked in slips
+  const totalBetAmount = slipStakeAgg[0]?.total ?? 0;
   const totalDeposits  = depositAgg[0]?.total ?? 0;
   const totalWithdrawals = withdrawalAgg[0]?.total ?? 0;
-  const totalWinningsPaid = winningsAgg[0]?.total ?? 0;         // match winnings paid out
-  const totalRefundsPaid  = refundAgg[0]?.total ?? 0;          // consolation refunds paid out
+  const totalWinningsPaid = winningsAgg[0]?.total ?? 0;
+  const totalRefundsPaid  = refundAgg[0]?.total ?? 0;
   const bettingRevenue = totalBetAmount - totalWinningsPaid - totalRefundsPaid;
 
   // Spin revenue: spin stakes minus spin payouts
@@ -666,8 +673,11 @@ router.get("/stats", async (req: AuthRequest, res) => {
   const totalSpinWon    = spinWinAgg[0]?.total ?? 0;
   const spinRevenue = totalSpinStaked - totalSpinWon;
 
-  // Combined platform revenue
-  const platformRevenue = bettingRevenue + spinRevenue;
+  // Withdrawal fee revenue (fees charged on each approved withdrawal)
+  const withdrawalFeeRevenue = withdrawalFeeAgg[0]?.total ?? 0;
+
+  // Combined platform revenue = betting + wheel + withdrawal fees
+  const platformRevenue = bettingRevenue + spinRevenue + withdrawalFeeRevenue;
 
   // Today's figures
   const todayBetAmount     = todaySlipStakeAgg[0]?.total ?? 0;
@@ -677,7 +687,8 @@ router.get("/stats", async (req: AuthRequest, res) => {
   const todaySpinStaked    = todaySpinStakeAgg[0]?.total ?? 0;
   const todaySpinWon       = todaySpinWinAgg[0]?.total ?? 0;
   const todaySpinRevenue   = todaySpinStaked - todaySpinWon;
-  const todayRevenue = todayBettingRevenue + todaySpinRevenue;
+  const todayWithdrawalFeeRevenue = todayWithdrawalFeeAgg[0]?.total ?? 0;
+  const todayRevenue = todayBettingRevenue + todaySpinRevenue + todayWithdrawalFeeRevenue;
 
   res.json({
     totalUsers,
@@ -693,6 +704,7 @@ router.get("/stats", async (req: AuthRequest, res) => {
     platformRevenue,
     bettingRevenue,
     spinRevenue,
+    withdrawalFeeRevenue,
     totalSpinStaked,
     totalSpinWon,
     totalWinningsPaid,
@@ -700,6 +712,7 @@ router.get("/stats", async (req: AuthRequest, res) => {
     todayRevenue,
     todayBettingRevenue,
     todaySpinRevenue,
+    todayWithdrawalFeeRevenue,
     recentBets: recentBets.map((b: any) => {
       const user = b.userId as any;
       return {
@@ -831,6 +844,8 @@ router.get("/config", async (req: AuthRequest, res) => {
     maxBetAmount: config.maxBetAmount,
     consolationRefundPercent: config.consolationRefundPercent ?? 50,
     referralRewardAmount: config.referralRewardAmount ?? 50,
+    minSpinAmount: config.minSpinAmount ?? 10,
+    maxSpinAmount: config.maxSpinAmount ?? 50000,
     mpesaConfigured: config.mpesaConfigured,
     mpesaEnvironment: config.mpesaEnvironment,
     mpesaShortCode: config.mpesaShortCode,
@@ -838,6 +853,9 @@ router.get("/config", async (req: AuthRequest, res) => {
     mpesaConsumerKeySet: !!config.mpesaConsumerKey,
     mpesaConsumerSecretSet: !!config.mpesaConsumerSecret,
     mpesaPasskeySet: !!config.mpesaPasskey,
+    mpesaInitiatorName: config.mpesaInitiatorName ?? "",
+    mpesaInitiatorNameSet: !!config.mpesaInitiatorName,
+    mpesaInitiatorPasswordSet: !!config.mpesaInitiatorPassword,
     pesapalConfigured: config.pesapalConfigured,
     pesapalEnvironment: config.pesapalEnvironment,
     pesapalCallbackUrl: config.pesapalCallbackUrl,
@@ -856,7 +874,8 @@ router.put("/config", async (req: AuthRequest, res) => {
     "minDeposit", "minBet", "minWithdrawal", "withdrawalFeePercent",
     "bettingWindowMinutes", "matchDurationSeconds", "maxBetAmount",
     "consolationRefundPercent", "referralRewardAmount",
-    "mpesaEnvironment", "mpesaShortCode", "mpesaCallbackUrl",
+    "minSpinAmount", "maxSpinAmount",
+    "mpesaEnvironment", "mpesaShortCode", "mpesaCallbackUrl", "mpesaInitiatorName",
     "pesapalEnvironment", "pesapalCallbackUrl", "pesapalIpnUrl", "activePaymentMethod",
   ];
   for (const f of fields) {
@@ -866,6 +885,7 @@ router.put("/config", async (req: AuthRequest, res) => {
   if (req.body.mpesaConsumerKey) config.mpesaConsumerKey = req.body.mpesaConsumerKey;
   if (req.body.mpesaConsumerSecret) config.mpesaConsumerSecret = req.body.mpesaConsumerSecret;
   if (req.body.mpesaPasskey) config.mpesaPasskey = req.body.mpesaPasskey;
+  if (req.body.mpesaInitiatorPassword) config.mpesaInitiatorPassword = req.body.mpesaInitiatorPassword;
   // Mark Daraja configured if all required fields present
   if (config.mpesaConsumerKey && config.mpesaConsumerSecret && config.mpesaShortCode && config.mpesaPasskey && config.mpesaCallbackUrl) {
     config.mpesaConfigured = true;
