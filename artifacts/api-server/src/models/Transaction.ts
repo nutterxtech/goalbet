@@ -11,10 +11,13 @@ export interface ITransaction extends Document {
   accountDetails?: string;
   processedBy?: mongoose.Types.ObjectId;
   processedAt?: Date;
+  paymentGateway?: "daraja" | "pesapal";
   mpesaCheckoutRequestId?: string;
   mpesaMerchantRequestId?: string;
   mpesaReceiptNumber?: string;
   mpesaPhone?: string;
+  pesapalOrderTrackingId?: string;
+  pesapalMerchantReference?: string;
   createdAt: Date;
 }
 
@@ -34,10 +37,13 @@ const TransactionSchema = new Schema<ITransaction>(
     accountDetails: String,
     processedBy: { type: Schema.Types.ObjectId, ref: "User" },
     processedAt: Date,
+    paymentGateway: { type: String, enum: ["daraja", "pesapal"] },
     mpesaCheckoutRequestId: String,
     mpesaMerchantRequestId: String,
     mpesaReceiptNumber: String,
     mpesaPhone: String,
+    pesapalOrderTrackingId: String,
+    pesapalMerchantReference: String,
   },
   { timestamps: true }
 );
@@ -45,5 +51,6 @@ const TransactionSchema = new Schema<ITransaction>(
 TransactionSchema.index({ userId: 1, createdAt: -1 });
 TransactionSchema.index({ type: 1, status: 1 });
 TransactionSchema.index({ mpesaCheckoutRequestId: 1 }, { sparse: true });
+TransactionSchema.index({ pesapalOrderTrackingId: 1 }, { sparse: true });
 
 export const Transaction = mongoose.model<ITransaction>("Transaction", TransactionSchema);

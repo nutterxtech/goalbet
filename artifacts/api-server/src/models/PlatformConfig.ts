@@ -19,6 +19,14 @@ export interface IPlatformConfig extends Document {
   mpesaCallbackUrl: string;
   mpesaEnvironment: "sandbox" | "production";
   mpesaConfigured: boolean;
+  pesapalConsumerKey: string;
+  pesapalConsumerSecret: string;
+  pesapalCallbackUrl: string;
+  pesapalIpnUrl: string;
+  pesapalEnvironment: "sandbox" | "live";
+  pesapalConfigured: boolean;
+  pesapalIpnId: string;
+  activePaymentMethod: "daraja" | "pesapal" | "auto";
 }
 
 const PlatformConfigSchema = new Schema<IPlatformConfig>(
@@ -41,6 +49,14 @@ const PlatformConfigSchema = new Schema<IPlatformConfig>(
     mpesaCallbackUrl: { type: String, default: "" },
     mpesaEnvironment: { type: String, enum: ["sandbox", "production"], default: "sandbox" },
     mpesaConfigured: { type: Boolean, default: false },
+    pesapalConsumerKey: { type: String, default: "" },
+    pesapalConsumerSecret: { type: String, default: "" },
+    pesapalCallbackUrl: { type: String, default: "" },
+    pesapalIpnUrl: { type: String, default: "" },
+    pesapalEnvironment: { type: String, enum: ["sandbox", "live"], default: "sandbox" },
+    pesapalConfigured: { type: Boolean, default: false },
+    pesapalIpnId: { type: String, default: "" },
+    activePaymentMethod: { type: String, enum: ["daraja", "pesapal", "auto"], default: "auto" },
   },
   { timestamps: true }
 );

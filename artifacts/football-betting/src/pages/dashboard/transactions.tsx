@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { ArrowDownToLine, ArrowUpFromLine, Loader2, Smartphone, CheckCircle2, Share2, Copy, XCircle } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, Loader2, Smartphone, CheckCircle2, Share2, Copy, XCircle, Globe, ExternalLink } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -162,9 +162,12 @@ export default function TransactionsPage() {
 function DepositModal({ open, onOpenChange }: { open: boolean, onOpenChange: (open: boolean) => void }) {
   const [amount, setAmount] = useState("100");
   const [phone, setPhone] = useState("");
-  const [step, setStep] = useState<"amount" | "waiting" | "success" | "failed">("amount");
+  const [step, setStep] = useState<"amount" | "daraja-waiting" | "pesapal-redirect" | "pesapal-waiting" | "success" | "failed">("amount");
   const [sending, setSending] = useState(false);
+  const [gateway, setGateway] = useState<"daraja" | "pesapal">("daraja");
   const [transactionId, setTransactionId] = useState<string | null>(null);
+  const [orderTrackingId, setOrderTrackingId] = useState<string | null>(null);
+  const [redirectUrl, setRedirectUrl] = useState<string | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -177,10 +180,15 @@ function DepositModal({ open, onOpenChange }: { open: boolean, onOpenChange: (op
     if (user?.phone && !phone) setPhone(user.phone);
   }, [user]);
 
-  // Poll for payment status when waiting
-  useEffect(() => {
-    if (step !== "waiting" || !transactionId) return;
+  function refreshBalances() {
+    queryClient.invalidateQueries({ queryKey: ["/api/user/balance"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/user/transactions"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+  }
 
+  // Poll for Daraja status
+  useEffect(() => {
+    if (step !== "daraja-waiting" || !transactionId) return;
     pollRef.current = setInterval(async () => {
       try {
         const token = localStorage.getItem("goalbet_token");
@@ -191,35 +199,64 @@ function DepositModal({ open, onOpenChange }: { open: boolean, onOpenChange: (op
         if (data.status === "completed") {
           clearInterval(pollRef.current!);
           setStep("success");
-          queryClient.invalidateQueries({ queryKey: ["/api/user/balance"] });
-          queryClient.invalidateQueries({ queryKey: ["/api/user/transactions"] });
-          queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+          refreshBalances();
         } else if (data.status === "failed") {
           clearInterval(pollRef.current!);
           setStep("failed");
         }
       } catch {}
     }, 3000);
-
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [step, transactionId]);
 
-  async function sendSTKPush() {
-    if (parsedAmount < 20 || !displayPhone) return;
+  // Poll for Pesapal status
+  useEffect(() => {
+    if (step !== "pesapal-waiting" || !orderTrackingId) return;
+    pollRef.current = setInterval(async () => {
+      try {
+        const token = localStorage.getItem("goalbet_token");
+        const res = await fetch(`${API_BASE}/user/deposit/pesapal/status/${orderTrackingId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (data.status === "completed") {
+          clearInterval(pollRef.current!);
+          setStep("success");
+          refreshBalances();
+        } else if (data.status === "failed") {
+          clearInterval(pollRef.current!);
+          setStep("failed");
+        }
+      } catch {}
+    }, 4000);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [step, orderTrackingId]);
+
+  async function initiateDeposit() {
+    if (parsedAmount < 20) return;
     setSending(true);
     try {
       const token = localStorage.getItem("goalbet_token");
-      const res = await fetch(`${API_BASE}/user/deposit/mpesa`, {
+      const res = await fetch(`${API_BASE}/user/deposit/initiate`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ amount: parsedAmount, phone: displayPhone }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message || "Failed to send M-Pesa prompt");
+      if (!res.ok) throw new Error(data.message || "Failed to initiate deposit");
+
+      setGateway(data.method);
       setTransactionId(data.transactionId);
-      setStep("waiting");
+
+      if (data.method === "daraja") {
+        setStep("daraja-waiting");
+      } else if (data.method === "pesapal") {
+        setOrderTrackingId(data.orderTrackingId);
+        setRedirectUrl(data.redirectUrl);
+        setStep("pesapal-redirect");
+      }
     } catch (err: any) {
-      toast({ title: "M-Pesa Error", description: err.message, variant: "destructive" });
+      toast({ title: "Deposit Error", description: err.message, variant: "destructive" });
     } finally {
       setSending(false);
     }
@@ -231,6 +268,8 @@ function DepositModal({ open, onOpenChange }: { open: boolean, onOpenChange: (op
       setStep("amount");
       setAmount("100");
       setTransactionId(null);
+      setOrderTrackingId(null);
+      setRedirectUrl(null);
     }
     onOpenChange(v);
   }
@@ -238,11 +277,15 @@ function DepositModal({ open, onOpenChange }: { open: boolean, onOpenChange: (op
   return (
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="border-border bg-card max-w-sm">
+
+        {/* ── Step: Enter amount ── */}
         {step === "amount" && (
           <>
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2"><Smartphone className="w-5 h-5 text-primary" /> Deposit via M-Pesa</DialogTitle>
-              <DialogDescription>An STK push will be sent to your phone. Min KSh 20.</DialogDescription>
+              <DialogTitle className="flex items-center gap-2">
+                <ArrowDownToLine className="w-5 h-5 text-primary" /> Deposit Funds
+              </DialogTitle>
+              <DialogDescription>Enter the amount to deposit. Min KSh 20.</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-2">
               <div className="space-y-2">
@@ -256,7 +299,7 @@ function DepositModal({ open, onOpenChange }: { open: boolean, onOpenChange: (op
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm text-muted-foreground">M-Pesa Phone Number</label>
+                <label className="text-sm text-muted-foreground">M-Pesa Phone (optional for Pesapal)</label>
                 <Input
                   type="tel"
                   placeholder="+254712345678"
@@ -267,24 +310,24 @@ function DepositModal({ open, onOpenChange }: { open: boolean, onOpenChange: (op
               </div>
               <Button
                 className="w-full h-12 font-bold"
-                onClick={sendSTKPush}
-                disabled={parsedAmount < 20 || !displayPhone || sending}
+                onClick={initiateDeposit}
+                disabled={parsedAmount < 20 || sending}
               >
-                {sending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Smartphone className="w-4 h-4 mr-2" />}
-                Send M-Pesa Prompt — {parsedAmount >= 20 ? formatCurrency(parsedAmount) : 'KSh 0'}
+                {sending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ArrowDownToLine className="w-4 h-4 mr-2" />}
+                {sending ? "Connecting..." : `Deposit ${parsedAmount >= 20 ? formatCurrency(parsedAmount) : "KSh 0"}`}
               </Button>
             </div>
           </>
         )}
 
-        {step === "waiting" && (
+        {/* ── Step: Daraja STK waiting ── */}
+        {step === "daraja-waiting" && (
           <>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <Loader2 className="w-5 h-5 animate-spin text-primary" />
-                Waiting for M-Pesa...
+                <Loader2 className="w-5 h-5 animate-spin text-primary" /> Waiting for M-Pesa...
               </DialogTitle>
-              <DialogDescription>Check your phone and enter your M-Pesa PIN to confirm the payment.</DialogDescription>
+              <DialogDescription>Check your phone and enter your M-Pesa PIN to confirm.</DialogDescription>
             </DialogHeader>
             <div className="py-6 space-y-4 text-center">
               <div className="mx-auto w-20 h-20 rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center">
@@ -293,7 +336,8 @@ function DepositModal({ open, onOpenChange }: { open: boolean, onOpenChange: (op
               <div className="space-y-1">
                 <p className="font-semibold text-white">STK Push Sent</p>
                 <p className="text-sm text-muted-foreground">
-                  An M-Pesa prompt for <strong className="text-white">{formatCurrency(parsedAmount)}</strong> was sent to <strong className="text-white">{displayPhone}</strong>.
+                  Prompt for <strong className="text-white">{formatCurrency(parsedAmount)}</strong> sent to{" "}
+                  <strong className="text-white">{displayPhone}</strong>.
                 </p>
                 <p className="text-xs text-muted-foreground mt-2">Enter your PIN on your phone to complete the deposit.</p>
               </div>
@@ -304,6 +348,78 @@ function DepositModal({ open, onOpenChange }: { open: boolean, onOpenChange: (op
           </>
         )}
 
+        {/* ── Step: Pesapal redirect ── */}
+        {step === "pesapal-redirect" && (
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Globe className="w-5 h-5 text-blue-400" /> Complete Payment via Pesapal
+              </DialogTitle>
+              <DialogDescription>Click below to open the secure Pesapal payment page.</DialogDescription>
+            </DialogHeader>
+            <div className="py-4 space-y-4 text-center">
+              <div className="mx-auto w-20 h-20 rounded-full bg-blue-500/10 border-2 border-blue-500/30 flex items-center justify-center">
+                <Globe className="w-10 h-10 text-blue-400" />
+              </div>
+              <div className="space-y-1">
+                <p className="font-semibold text-white">{formatCurrency(parsedAmount)} ready to pay</p>
+                <p className="text-sm text-muted-foreground">
+                  Complete payment securely on Pesapal. Supports M-Pesa, cards, and more.
+                </p>
+              </div>
+              <div className="flex flex-col gap-3">
+                <Button
+                  className="w-full h-12 font-bold bg-blue-600 hover:bg-blue-700 text-white"
+                  onClick={() => {
+                    if (redirectUrl) {
+                      window.open(redirectUrl, "_blank", "noopener,noreferrer");
+                      setStep("pesapal-waiting");
+                    }
+                  }}
+                >
+                  <ExternalLink className="w-4 h-4 mr-2" /> Open Pesapal Payment Page
+                </Button>
+                <p className="text-xs text-muted-foreground">After paying, return here — your balance will update automatically.</p>
+              </div>
+              <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => handleClose(false)}>
+                Cancel
+              </Button>
+            </div>
+          </>
+        )}
+
+        {/* ── Step: Pesapal waiting (after redirect opened) ── */}
+        {step === "pesapal-waiting" && (
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Loader2 className="w-5 h-5 animate-spin text-blue-400" /> Waiting for Pesapal...
+              </DialogTitle>
+              <DialogDescription>Complete your payment on the Pesapal page. This will update automatically.</DialogDescription>
+            </DialogHeader>
+            <div className="py-6 space-y-4 text-center">
+              <div className="mx-auto w-20 h-20 rounded-full bg-blue-500/10 border-2 border-blue-500/30 flex items-center justify-center">
+                <Globe className="w-10 h-10 text-blue-400 animate-pulse" />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Waiting for confirmation of <strong className="text-white">{formatCurrency(parsedAmount)}</strong>.
+              </p>
+              <div className="flex gap-2">
+                {redirectUrl && (
+                  <Button variant="outline" size="sm" className="flex-1 gap-1.5 text-blue-400 border-blue-500/40"
+                    onClick={() => window.open(redirectUrl, "_blank", "noopener,noreferrer")}>
+                    <ExternalLink className="w-3.5 h-3.5" /> Reopen Payment
+                  </Button>
+                )}
+                <Button variant="ghost" size="sm" className="flex-1 text-muted-foreground" onClick={() => handleClose(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ── Step: Success ── */}
         {step === "success" && (
           <>
             <DialogHeader>
@@ -318,19 +434,27 @@ function DepositModal({ open, onOpenChange }: { open: boolean, onOpenChange: (op
               <div>
                 <p className="text-2xl font-display font-black text-primary">{formatCurrency(parsedAmount)}</p>
                 <p className="text-muted-foreground text-sm mt-1">has been added to your wallet</p>
+                {gateway === "pesapal" && (
+                  <p className="text-xs text-blue-400 mt-1">via Pesapal</p>
+                )}
               </div>
               <Button className="w-full" onClick={() => handleClose(false)}>Done</Button>
             </div>
           </>
         )}
 
+        {/* ── Step: Failed ── */}
         {step === "failed" && (
           <>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-destructive">
                 <XCircle className="w-5 h-5" /> Payment Cancelled
               </DialogTitle>
-              <DialogDescription>The M-Pesa payment was not completed. No funds were deducted.</DialogDescription>
+              <DialogDescription>
+                {gateway === "pesapal"
+                  ? "The Pesapal payment was not completed. No funds were deducted."
+                  : "The M-Pesa payment was not completed. No funds were deducted."}
+              </DialogDescription>
             </DialogHeader>
             <div className="py-4 flex gap-2">
               <Button variant="outline" className="flex-1" onClick={() => handleClose(false)}>Close</Button>
@@ -338,6 +462,7 @@ function DepositModal({ open, onOpenChange }: { open: boolean, onOpenChange: (op
             </div>
           </>
         )}
+
       </DialogContent>
     </Dialog>
   );

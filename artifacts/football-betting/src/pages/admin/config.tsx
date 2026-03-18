@@ -9,7 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { useForm } from "react-hook-form";
 import { useToast } from "@/components/ui/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { Settings, Smartphone, CheckCircle2, Eye, EyeOff } from "lucide-react";
+import { Settings, Smartphone, CheckCircle2, Eye, EyeOff, Globe, RefreshCw, AlertCircle, Zap } from "lucide-react";
+import { API_BASE } from "@/lib/api";
 
 interface ConfigForm {
   minDeposit: number;
@@ -32,14 +33,52 @@ interface MpesaForm {
   mpesaEnvironment: "sandbox" | "production";
 }
 
+interface PesapalForm {
+  pesapalConsumerKey: string;
+  pesapalConsumerSecret: string;
+  pesapalCallbackUrl: string;
+  pesapalIpnUrl: string;
+  pesapalEnvironment: "sandbox" | "live";
+}
+
+const METHOD_OPTIONS = [
+  {
+    value: "auto",
+    label: "Auto (Smart Fallback)",
+    desc: "Tries Daraja first; if it fails or isn't configured, falls back to Pesapal automatically.",
+    icon: Zap,
+    color: "text-yellow-400",
+  },
+  {
+    value: "daraja",
+    label: "M-Pesa Daraja Only",
+    desc: "Always use Safaricom Daraja STK push for all deposits. Pesapal is ignored.",
+    icon: Smartphone,
+    color: "text-primary",
+  },
+  {
+    value: "pesapal",
+    label: "Pesapal Only",
+    desc: "Always use Pesapal payment page for all deposits. Daraja is ignored.",
+    icon: Globe,
+    color: "text-blue-400",
+  },
+];
+
 export default function AdminConfig() {
   const { data, isLoading } = useAdminGetConfig();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { register, handleSubmit, reset, formState: { isSubmitting } } = useForm<ConfigForm>();
   const mpesaForm = useForm<MpesaForm>({ defaultValues: { mpesaEnvironment: "sandbox" } });
-  const [showSecrets, setShowSecrets] = useState(false);
+  const pesapalForm = useForm<PesapalForm>({ defaultValues: { pesapalEnvironment: "sandbox" } });
+  const [showMpesaSecrets, setShowMpesaSecrets] = useState(false);
+  const [showPesapalSecrets, setShowPesapalSecrets] = useState(false);
   const [savingMpesa, setSavingMpesa] = useState(false);
+  const [savingPesapal, setSavingPesapal] = useState(false);
+  const [switchingMethod, setSwitchingMethod] = useState(false);
+  const [registeringIpn, setRegisteringIpn] = useState(false);
+  const [selectedMethod, setSelectedMethod] = useState<string>("auto");
 
   useEffect(() => {
     if (data) {
@@ -52,6 +91,14 @@ export default function AdminConfig() {
         mpesaConsumerSecret: "",
         mpesaPasskey: "",
       });
+      pesapalForm.reset({
+        pesapalCallbackUrl: (data as any).pesapalCallbackUrl || "",
+        pesapalIpnUrl: (data as any).pesapalIpnUrl || "",
+        pesapalEnvironment: (data as any).pesapalEnvironment || "sandbox",
+        pesapalConsumerKey: "",
+        pesapalConsumerSecret: "",
+      });
+      setSelectedMethod((data as any).activePaymentMethod || "auto");
     }
   }, [data, reset]);
 
@@ -98,6 +145,67 @@ export default function AdminConfig() {
     }
   };
 
+  const onPesapalSubmit = async (values: PesapalForm) => {
+    setSavingPesapal(true);
+    try {
+      await adminUpdateConfig({
+        pesapalCallbackUrl: values.pesapalCallbackUrl,
+        pesapalIpnUrl: values.pesapalIpnUrl,
+        pesapalEnvironment: values.pesapalEnvironment,
+        ...(values.pesapalConsumerKey ? { pesapalConsumerKey: values.pesapalConsumerKey } : {}),
+        ...(values.pesapalConsumerSecret ? { pesapalConsumerSecret: values.pesapalConsumerSecret } : {}),
+      } as any);
+      queryClient.invalidateQueries();
+      toast({ title: "Pesapal credentials saved", description: "Pesapal API v3 configured successfully." });
+      pesapalForm.setValue("pesapalConsumerKey", "");
+      pesapalForm.setValue("pesapalConsumerSecret", "");
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setSavingPesapal(false);
+    }
+  };
+
+  const switchPaymentMethod = async (method: string) => {
+    setSwitchingMethod(true);
+    try {
+      const token = localStorage.getItem("goalbet_token");
+      const res = await fetch(`${API_BASE}/admin/payment/switch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ method }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message);
+      setSelectedMethod(method);
+      queryClient.invalidateQueries();
+      toast({ title: "Payment method updated", description: `Now using: ${METHOD_OPTIONS.find(m => m.value === method)?.label}` });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setSwitchingMethod(false);
+    }
+  };
+
+  const registerIPN = async () => {
+    setRegisteringIpn(true);
+    try {
+      const token = localStorage.getItem("goalbet_token");
+      const res = await fetch(`${API_BASE}/admin/pesapal/register-ipn`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message);
+      queryClient.invalidateQueries();
+      toast({ title: "IPN Registered", description: `Pesapal IPN ID: ${data.ipnId}` });
+    } catch (err: any) {
+      toast({ title: "IPN Registration Failed", description: err.message, variant: "destructive" });
+    } finally {
+      setRegisteringIpn(false);
+    }
+  };
+
   const fields = [
     { key: "minDeposit", label: "Minimum Deposit (KSh)", desc: "Minimum amount users can deposit" },
     { key: "minBet", label: "Minimum Bet (KSh)", desc: "Minimum stake per bet slip" },
@@ -114,6 +222,10 @@ export default function AdminConfig() {
   const keySet = (data as any)?.mpesaConsumerKeySet;
   const secretSet = (data as any)?.mpesaConsumerSecretSet;
   const passkeySet = (data as any)?.mpesaPasskeySet;
+  const pesapalConfigured = (data as any)?.pesapalConfigured;
+  const ppKeySet = (data as any)?.pesapalConsumerKeySet;
+  const ppSecretSet = (data as any)?.pesapalConsumerSecretSet;
+  const pesapalIpnId = (data as any)?.pesapalIpnId;
 
   return (
     <AdminLayout>
@@ -121,7 +233,7 @@ export default function AdminConfig() {
         <h1 className="text-3xl font-bold text-white flex items-center gap-3">
           <Settings className="text-primary" /> Platform Configuration
         </h1>
-        <p className="text-muted-foreground mt-1">Configure betting limits and platform settings</p>
+        <p className="text-muted-foreground mt-1">Configure betting limits, platform settings, and payment gateways</p>
       </div>
 
       <div className="space-y-6 max-w-2xl">
@@ -156,6 +268,63 @@ export default function AdminConfig() {
           </CardContent>
         </Card>
 
+        {/* ── Active Payment Method ── */}
+        <Card className="bg-card/50 border-border/50">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-white flex items-center gap-2">
+                  <Zap className="w-5 h-5 text-yellow-400" /> Active Payment Gateway
+                </CardTitle>
+                <CardDescription>Choose which gateway handles deposits. Switch any time.</CardDescription>
+              </div>
+              <Badge className={
+                selectedMethod === "auto" ? "bg-yellow-500/20 text-yellow-400 border-yellow-500/30" :
+                selectedMethod === "daraja" ? "bg-primary/20 text-primary border-primary/30" :
+                "bg-blue-500/20 text-blue-400 border-blue-500/30"
+              }>
+                {METHOD_OPTIONS.find(m => m.value === selectedMethod)?.label ?? selectedMethod}
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {METHOD_OPTIONS.map((opt) => {
+              const Icon = opt.icon;
+              const isActive = selectedMethod === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => !isActive && switchPaymentMethod(opt.value)}
+                  disabled={switchingMethod}
+                  className={`w-full text-left p-4 rounded-xl border transition-all ${
+                    isActive
+                      ? "border-primary/50 bg-primary/5"
+                      : "border-border/40 bg-background/50 hover:border-border hover:bg-background/80"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <Icon className={`w-5 h-5 ${opt.color}`} />
+                      <div>
+                        <p className="font-semibold text-white text-sm">{opt.label}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{opt.desc}</p>
+                      </div>
+                    </div>
+                    {isActive && (
+                      <Badge className="bg-primary text-black text-xs font-bold shrink-0">Active</Badge>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+            <p className="text-xs text-muted-foreground pt-1 flex items-start gap-1.5">
+              <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+              Switching takes effect immediately. Ensure the selected gateway is fully configured below.
+            </p>
+          </CardContent>
+        </Card>
+
         {/* M-Pesa Daraja credentials */}
         <Card className="bg-card/50 border-border/50">
           <CardHeader>
@@ -164,7 +333,7 @@ export default function AdminConfig() {
                 <CardTitle className="text-white flex items-center gap-2">
                   <Smartphone className="w-5 h-5 text-primary" /> M-Pesa Daraja API
                 </CardTitle>
-                <CardDescription>Configure Safaricom Daraja credentials for real M-Pesa payments</CardDescription>
+                <CardDescription>Safaricom Daraja credentials for STK push deposits</CardDescription>
               </div>
               {mpesaConfigured ? (
                 <Badge className="bg-green-600 text-white flex items-center gap-1">
@@ -211,9 +380,9 @@ export default function AdminConfig() {
               <div className="border-t border-border/30 pt-4">
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-sm text-white font-medium">Credentials</p>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => setShowSecrets(s => !s)} className="text-xs text-muted-foreground gap-1">
-                    {showSecrets ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                    {showSecrets ? "Hide" : "Show"} secrets
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setShowMpesaSecrets(s => !s)} className="text-xs text-muted-foreground gap-1">
+                    {showMpesaSecrets ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                    {showMpesaSecrets ? "Hide" : "Show"} secrets
                   </Button>
                 </div>
                 <div className="space-y-3 text-xs text-muted-foreground mb-3">
@@ -234,7 +403,7 @@ export default function AdminConfig() {
                   <div className="space-y-1">
                     <Label className="text-sm text-muted-foreground">Consumer Key {keySet && "(leave blank to keep current)"}</Label>
                     <Input
-                      type={showSecrets ? "text" : "password"}
+                      type={showMpesaSecrets ? "text" : "password"}
                       placeholder={keySet ? "••••••••" : "Enter consumer key"}
                       {...mpesaForm.register("mpesaConsumerKey")}
                       className="bg-background border-border/50 text-white font-mono text-xs"
@@ -243,7 +412,7 @@ export default function AdminConfig() {
                   <div className="space-y-1">
                     <Label className="text-sm text-muted-foreground">Consumer Secret {secretSet && "(leave blank to keep current)"}</Label>
                     <Input
-                      type={showSecrets ? "text" : "password"}
+                      type={showMpesaSecrets ? "text" : "password"}
                       placeholder={secretSet ? "••••••••" : "Enter consumer secret"}
                       {...mpesaForm.register("mpesaConsumerSecret")}
                       className="bg-background border-border/50 text-white font-mono text-xs"
@@ -252,7 +421,7 @@ export default function AdminConfig() {
                   <div className="space-y-1">
                     <Label className="text-sm text-muted-foreground">Passkey {passkeySet && "(leave blank to keep current)"}</Label>
                     <Input
-                      type={showSecrets ? "text" : "password"}
+                      type={showMpesaSecrets ? "text" : "password"}
                       placeholder={passkeySet ? "••••••••" : "Enter passkey"}
                       {...mpesaForm.register("mpesaPasskey")}
                       className="bg-background border-border/50 text-white font-mono text-xs"
@@ -264,6 +433,129 @@ export default function AdminConfig() {
               <Button type="submit" disabled={savingMpesa} className="w-full font-bold">
                 {savingMpesa ? "Saving..." : "Save M-Pesa Credentials"}
               </Button>
+            </form>
+          </CardContent>
+        </Card>
+
+        {/* ── Pesapal API v3 credentials ── */}
+        <Card className="bg-card/50 border-border/50">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-white flex items-center gap-2">
+                  <Globe className="w-5 h-5 text-blue-400" /> Pesapal API v3
+                </CardTitle>
+                <CardDescription>Pesapal payment page — works with cards, mobile money &amp; more</CardDescription>
+              </div>
+              {pesapalConfigured ? (
+                <Badge className="bg-blue-600 text-white flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" /> Active
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="text-muted-foreground">Not Configured</Badge>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={pesapalForm.handleSubmit(onPesapalSubmit)} className="space-y-5">
+              <div className="space-y-2">
+                <Label className="text-white">Environment</Label>
+                <select
+                  {...pesapalForm.register("pesapalEnvironment")}
+                  className="w-full h-9 rounded-md border border-border/50 bg-background px-3 text-sm text-white"
+                >
+                  <option value="sandbox">Sandbox (Testing)</option>
+                  <option value="live">Live (Production)</option>
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-white">Callback URL</Label>
+                <p className="text-xs text-muted-foreground">Where users land after completing Pesapal payment (your app URL)</p>
+                <Input
+                  placeholder="https://yourdomain.com/transactions"
+                  {...pesapalForm.register("pesapalCallbackUrl")}
+                  className="bg-background border-border/50 text-white font-mono text-xs"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-white">IPN URL</Label>
+                <p className="text-xs text-muted-foreground">Pesapal posts payment confirmations here (your backend API)</p>
+                <Input
+                  placeholder="https://yourdomain.com/api/user/deposit/pesapal/ipn"
+                  {...pesapalForm.register("pesapalIpnUrl")}
+                  className="bg-background border-border/50 text-white font-mono text-xs"
+                />
+              </div>
+
+              <div className="border-t border-border/30 pt-4">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm text-white font-medium">API Credentials</p>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setShowPesapalSecrets(s => !s)} className="text-xs text-muted-foreground gap-1">
+                    {showPesapalSecrets ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                    {showPesapalSecrets ? "Hide" : "Show"} secrets
+                  </Button>
+                </div>
+                <div className="space-y-3 text-xs text-muted-foreground mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full ${ppKeySet ? "bg-green-500" : "bg-zinc-600"}`} />
+                    Consumer Key: {ppKeySet ? "Set ✓" : "Not set"}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full ${ppSecretSet ? "bg-green-500" : "bg-zinc-600"}`} />
+                    Consumer Secret: {ppSecretSet ? "Set ✓" : "Not set"}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full ${!!pesapalIpnId ? "bg-green-500" : "bg-zinc-600"}`} />
+                    IPN Registered: {pesapalIpnId ? `✓ (ID: ${pesapalIpnId.slice(0, 8)}…)` : "Not registered"}
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <Label className="text-sm text-muted-foreground">Consumer Key {ppKeySet && "(leave blank to keep current)"}</Label>
+                    <Input
+                      type={showPesapalSecrets ? "text" : "password"}
+                      placeholder={ppKeySet ? "••••••••" : "Enter Pesapal consumer key"}
+                      {...pesapalForm.register("pesapalConsumerKey")}
+                      className="bg-background border-border/50 text-white font-mono text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-sm text-muted-foreground">Consumer Secret {ppSecretSet && "(leave blank to keep current)"}</Label>
+                    <Input
+                      type={showPesapalSecrets ? "text" : "password"}
+                      placeholder={ppSecretSet ? "••••••••" : "Enter Pesapal consumer secret"}
+                      {...pesapalForm.register("pesapalConsumerSecret")}
+                      className="bg-background border-border/50 text-white font-mono text-xs"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <Button type="submit" disabled={savingPesapal} className="flex-1 font-bold bg-blue-600 hover:bg-blue-700 text-white">
+                  {savingPesapal ? "Saving..." : "Save Pesapal Credentials"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={registeringIpn || !pesapalConfigured}
+                  onClick={registerIPN}
+                  className="gap-2 border-blue-500/40 text-blue-400 hover:bg-blue-500/10"
+                  title={!pesapalConfigured ? "Configure Pesapal credentials first" : "Register IPN URL with Pesapal"}
+                >
+                  <RefreshCw className={`w-4 h-4 ${registeringIpn ? "animate-spin" : ""}`} />
+                  {registeringIpn ? "Registering…" : "Register IPN"}
+                </Button>
+              </div>
+
+              {pesapalConfigured && !pesapalIpnId && (
+                <div className="flex items-start gap-2 text-xs text-yellow-400 bg-yellow-500/10 rounded-lg p-3 border border-yellow-500/20">
+                  <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                  IPN not registered yet. Click "Register IPN" after saving credentials to enable automatic payment confirmations.
+                </div>
+              )}
             </form>
           </CardContent>
         </Card>

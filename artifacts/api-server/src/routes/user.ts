@@ -8,6 +8,7 @@ import { Notification } from "../models/Notification.js";
 import { Match } from "../models/Match.js";
 import { getConfig } from "../models/PlatformConfig.js";
 import { initiateSTKPush } from "../services/darajaService.js";
+import { submitPesapalOrder, getPesapalOrderStatus } from "../services/pesapalService.js";
 
 const router = Router();
 
@@ -59,12 +60,66 @@ router.post("/deposit/mpesa/callback", async (req, res) => {
   }
 });
 
+// Public IPN endpoint — no auth (Pesapal calls this)
+router.post("/deposit/pesapal/ipn", async (req, res) => {
+  try {
+    const { OrderTrackingId, OrderMerchantReference, OrderNotificationType } = req.body;
+    if (!OrderTrackingId) { res.status(200).json({ status: 200 }); return; }
+
+    const tx = await Transaction.findOne({ pesapalOrderTrackingId: OrderTrackingId, status: "pending" });
+    if (!tx) { res.status(200).json({ status: 200 }); return; }
+
+    const config = await getConfig();
+    const statusResult = await getPesapalOrderStatus(
+      { consumerKey: config.pesapalConsumerKey, consumerSecret: config.pesapalConsumerSecret, environment: config.pesapalEnvironment },
+      OrderTrackingId
+    );
+
+    if (statusResult.status === "COMPLETED") {
+      tx.status = "completed";
+      await tx.save();
+
+      const amount = statusResult.amount ?? tx.amount;
+      const user = await User.findByIdAndUpdate(
+        tx.userId,
+        { $inc: { balance: amount, totalDeposits: amount } },
+        { new: true }
+      );
+
+      await Notification.create({
+        userId: tx.userId,
+        type: "deposit",
+        message: `✅ Pesapal deposit of KSh ${amount} confirmed (Ref: ${statusResult.confirmationCode ?? OrderMerchantReference}). Balance: KSh ${user!.balance.toFixed(2)}`,
+        data: { amount, confirmationCode: statusResult.confirmationCode },
+      });
+    } else if (statusResult.status === "FAILED" || statusResult.status === "INVALID") {
+      tx.status = "failed";
+      await tx.save();
+    }
+
+    res.status(200).json({ status: 200 });
+  } catch (err) {
+    console.error("Pesapal IPN error:", err);
+    res.status(200).json({ status: 200 });
+  }
+});
+
 router.use(authenticate);
 
 // GET /user/balance
 router.get("/balance", async (req: AuthRequest, res) => {
   const user = await User.findById(req.user!.id).select("balance");
   res.json({ balance: user?.balance ?? 0 });
+});
+
+// GET /user/payment-method — returns active payment gateway info (no secrets)
+router.get("/payment-method", async (req: AuthRequest, res) => {
+  const config = await getConfig();
+  res.json({
+    activePaymentMethod: config.activePaymentMethod ?? "auto",
+    mpesaConfigured: config.mpesaConfigured,
+    pesapalConfigured: config.pesapalConfigured,
+  });
 });
 
 // POST /user/deposit/mpesa — initiates real STK push
@@ -148,6 +203,204 @@ router.get("/deposit/mpesa/status/:transactionId", async (req: AuthRequest, res)
     res.json({ status: tx.status, amount: tx.amount });
   } catch {
     res.status(500).json({ message: "Server error" });
+  }
+});
+
+// POST /user/deposit/initiate — unified deposit initiation (picks gateway from activePaymentMethod)
+router.post("/deposit/initiate", async (req: AuthRequest, res) => {
+  try {
+    const config = await getConfig();
+    const { amount, phone } = req.body;
+
+    if (!amount || amount < config.minDeposit) {
+      res.status(400).json({ message: `Minimum deposit is KSh ${config.minDeposit}` });
+      return;
+    }
+
+    const user = await User.findById(req.user!.id);
+    if (!user) { res.status(404).json({ message: "User not found" }); return; }
+
+    const method = config.activePaymentMethod ?? "auto";
+    const usedaraja = method === "daraja" || (method === "auto" && config.mpesaConfigured && config.mpesaConsumerKey);
+    const usePesapal = method === "pesapal" || (method === "auto" && !usedaraja && config.pesapalConfigured && config.pesapalConsumerKey);
+
+    if (!usedaraja && !usePesapal) {
+      res.status(503).json({ message: "No payment gateway is configured. Contact support." });
+      return;
+    }
+
+    // ── Daraja STK push ──
+    if (usedaraja) {
+      if (!phone) { res.status(400).json({ message: "Phone number is required for M-Pesa" }); return; }
+
+      const tx = await Transaction.create({
+        userId: req.user!.id,
+        type: "deposit",
+        amount,
+        fee: 0,
+        netAmount: amount,
+        status: "pending",
+        description: "M-Pesa deposit",
+        paymentGateway: "daraja",
+        mpesaPhone: phone,
+      });
+
+      try {
+        const stkResult = await initiateSTKPush(
+          {
+            consumerKey: config.mpesaConsumerKey,
+            consumerSecret: config.mpesaConsumerSecret,
+            shortCode: config.mpesaShortCode,
+            passkey: config.mpesaPasskey,
+            callbackUrl: config.mpesaCallbackUrl,
+            environment: config.mpesaEnvironment,
+          },
+          phone,
+          amount,
+          `GB-${tx.id}`,
+          "GoalBet Deposit"
+        );
+
+        if (stkResult.ResponseCode !== "0") {
+          tx.status = "failed";
+          await tx.save();
+          // In auto mode, fallback to Pesapal if configured
+          if (method === "auto" && config.pesapalConfigured && config.pesapalConsumerKey) {
+            // fall through to Pesapal below
+          } else {
+            res.status(502).json({ message: stkResult.ResponseDescription || "STK push failed" });
+            return;
+          }
+        } else {
+          tx.mpesaCheckoutRequestId = stkResult.CheckoutRequestID;
+          tx.mpesaMerchantRequestId = stkResult.MerchantRequestID;
+          await tx.save();
+          res.json({
+            success: true,
+            method: "daraja",
+            message: "M-Pesa prompt sent to your phone. Enter your PIN to confirm.",
+            checkoutRequestId: stkResult.CheckoutRequestID,
+            transactionId: tx.id,
+          });
+          return;
+        }
+      } catch (darajaErr: any) {
+        tx.status = "failed";
+        await tx.save();
+        // In auto mode, fallback to Pesapal
+        if (method !== "auto" || !config.pesapalConfigured || !config.pesapalConsumerKey) {
+          console.error("Daraja error:", darajaErr?.response?.data || darajaErr.message);
+          res.status(500).json({ message: darajaErr?.response?.data?.errorMessage || "Failed to initiate M-Pesa payment" });
+          return;
+        }
+        console.warn("Daraja failed, falling back to Pesapal:", darajaErr.message);
+      }
+    }
+
+    // ── Pesapal order ──
+    if (!config.pesapalConfigured || !config.pesapalConsumerKey) {
+      res.status(503).json({ message: "Pesapal is not configured. Contact support." });
+      return;
+    }
+    if (!config.pesapalIpnId) {
+      res.status(503).json({ message: "Pesapal IPN not registered. Admin must register IPN first." });
+      return;
+    }
+
+    const tx = await Transaction.create({
+      userId: req.user!.id,
+      type: "deposit",
+      amount,
+      fee: 0,
+      netAmount: amount,
+      status: "pending",
+      description: "Pesapal deposit",
+      paymentGateway: "pesapal",
+    });
+
+    const merchantRef = `GB-PP-${tx.id}`;
+    const orderResult = await submitPesapalOrder(
+      { consumerKey: config.pesapalConsumerKey, consumerSecret: config.pesapalConsumerSecret, environment: config.pesapalEnvironment },
+      {
+        merchantReference: merchantRef,
+        amount,
+        currency: "KES",
+        description: "GoalBet Deposit",
+        callbackUrl: config.pesapalCallbackUrl || `${req.headers.origin}/transactions`,
+        ipnId: config.pesapalIpnId,
+        email: user.email,
+        phone: phone || user.phone || "",
+        firstName: user.username,
+        lastName: "User",
+      }
+    );
+
+    tx.pesapalOrderTrackingId = orderResult.orderTrackingId;
+    tx.pesapalMerchantReference = orderResult.merchantReference;
+    await tx.save();
+
+    res.json({
+      success: true,
+      method: "pesapal",
+      message: "Click the link below to complete your payment via Pesapal.",
+      redirectUrl: orderResult.redirectUrl,
+      orderTrackingId: orderResult.orderTrackingId,
+      transactionId: tx.id,
+    });
+  } catch (err: any) {
+    console.error("Deposit initiate error:", err?.response?.data || err.message);
+    res.status(500).json({ message: err?.response?.data?.error?.message || err.message || "Failed to initiate deposit" });
+  }
+});
+
+// GET /user/deposit/pesapal/status/:trackingId — poll Pesapal order status
+router.get("/deposit/pesapal/status/:trackingId", async (req: AuthRequest, res) => {
+  try {
+    const tx = await Transaction.findOne({ pesapalOrderTrackingId: req.params.trackingId, userId: req.user!.id });
+    if (!tx) { res.status(404).json({ message: "Transaction not found" }); return; }
+
+    // If already resolved, return DB status
+    if (tx.status === "completed" || tx.status === "failed") {
+      res.json({ status: tx.status, amount: tx.amount });
+      return;
+    }
+
+    // Otherwise poll Pesapal API
+    const config = await getConfig();
+    const statusResult = await getPesapalOrderStatus(
+      { consumerKey: config.pesapalConsumerKey, consumerSecret: config.pesapalConsumerSecret, environment: config.pesapalEnvironment },
+      req.params.trackingId
+    );
+
+    if (statusResult.status === "COMPLETED") {
+      tx.status = "completed";
+      await tx.save();
+
+      const amount = statusResult.amount ?? tx.amount;
+      const user = await User.findByIdAndUpdate(
+        tx.userId,
+        { $inc: { balance: amount, totalDeposits: amount } },
+        { new: true }
+      );
+
+      await Notification.create({
+        userId: tx.userId,
+        type: "deposit",
+        message: `✅ Pesapal deposit of KSh ${amount} confirmed. Balance: KSh ${user!.balance.toFixed(2)}`,
+        data: { amount },
+      });
+
+      res.json({ status: "completed", amount });
+    } else if (statusResult.status === "FAILED" || statusResult.status === "INVALID") {
+      tx.status = "failed";
+      await tx.save();
+      res.json({ status: "failed", amount: tx.amount });
+    } else {
+      res.json({ status: "pending", amount: tx.amount });
+    }
+  } catch (err: any) {
+    console.error("Pesapal status check error:", err?.response?.data || err.message);
+    res.status(500).json({ message: "Failed to check payment status" });
   }
 });
 

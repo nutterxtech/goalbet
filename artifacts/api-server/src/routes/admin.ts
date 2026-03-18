@@ -838,6 +838,14 @@ router.get("/config", async (req: AuthRequest, res) => {
     mpesaConsumerKeySet: !!config.mpesaConsumerKey,
     mpesaConsumerSecretSet: !!config.mpesaConsumerSecret,
     mpesaPasskeySet: !!config.mpesaPasskey,
+    pesapalConfigured: config.pesapalConfigured,
+    pesapalEnvironment: config.pesapalEnvironment,
+    pesapalCallbackUrl: config.pesapalCallbackUrl,
+    pesapalIpnUrl: config.pesapalIpnUrl,
+    pesapalIpnId: config.pesapalIpnId,
+    pesapalConsumerKeySet: !!config.pesapalConsumerKey,
+    pesapalConsumerSecretSet: !!config.pesapalConsumerSecret,
+    activePaymentMethod: config.activePaymentMethod ?? "auto",
   });
 });
 
@@ -849,6 +857,7 @@ router.put("/config", async (req: AuthRequest, res) => {
     "bettingWindowMinutes", "matchDurationSeconds", "maxBetAmount",
     "consolationRefundPercent", "referralRewardAmount",
     "mpesaEnvironment", "mpesaShortCode", "mpesaCallbackUrl",
+    "pesapalEnvironment", "pesapalCallbackUrl", "pesapalIpnUrl", "activePaymentMethod",
   ];
   for (const f of fields) {
     if (req.body[f] !== undefined) (config as any)[f] = req.body[f];
@@ -857,9 +866,16 @@ router.put("/config", async (req: AuthRequest, res) => {
   if (req.body.mpesaConsumerKey) config.mpesaConsumerKey = req.body.mpesaConsumerKey;
   if (req.body.mpesaConsumerSecret) config.mpesaConsumerSecret = req.body.mpesaConsumerSecret;
   if (req.body.mpesaPasskey) config.mpesaPasskey = req.body.mpesaPasskey;
-  // Mark configured if all required fields are present
+  // Mark Daraja configured if all required fields present
   if (config.mpesaConsumerKey && config.mpesaConsumerSecret && config.mpesaShortCode && config.mpesaPasskey && config.mpesaCallbackUrl) {
     config.mpesaConfigured = true;
+  }
+  // Pesapal credentials — only update if provided
+  if (req.body.pesapalConsumerKey) config.pesapalConsumerKey = req.body.pesapalConsumerKey;
+  if (req.body.pesapalConsumerSecret) config.pesapalConsumerSecret = req.body.pesapalConsumerSecret;
+  // Mark Pesapal configured if all required fields present
+  if (config.pesapalConsumerKey && config.pesapalConsumerSecret && config.pesapalCallbackUrl && config.pesapalIpnUrl) {
+    config.pesapalConfigured = true;
   }
   await config.save();
 
@@ -875,7 +891,49 @@ router.put("/config", async (req: AuthRequest, res) => {
     maxBetAmount: config.maxBetAmount,
     consolationRefundPercent: config.consolationRefundPercent ?? 50,
     referralRewardAmount: config.referralRewardAmount ?? 50,
+    activePaymentMethod: config.activePaymentMethod ?? "auto",
   });
+});
+
+// POST /admin/payment/switch — switch active payment method
+router.post("/payment/switch", async (req: AuthRequest, res) => {
+  const { method } = req.body;
+  if (!["daraja", "pesapal", "auto"].includes(method)) {
+    res.status(400).json({ message: "Invalid method. Use: daraja | pesapal | auto" });
+    return;
+  }
+  const config = await getConfig();
+  config.activePaymentMethod = method;
+  await config.save();
+  await logAction(req.user!.id, "SWITCH_PAYMENT_METHOD", `Payment method switched to ${method}`);
+  res.json({ success: true, activePaymentMethod: config.activePaymentMethod });
+});
+
+// POST /admin/pesapal/register-ipn — register IPN URL with Pesapal and store the ipn_id
+router.post("/pesapal/register-ipn", async (req: AuthRequest, res) => {
+  try {
+    const config = await getConfig();
+    if (!config.pesapalConsumerKey || !config.pesapalConsumerSecret) {
+      res.status(400).json({ message: "Pesapal credentials not configured" });
+      return;
+    }
+    if (!config.pesapalIpnUrl) {
+      res.status(400).json({ message: "Pesapal IPN URL not set in config" });
+      return;
+    }
+    const { registerPesapalIPN } = await import("../services/pesapalService.js");
+    const ipnId = await registerPesapalIPN(
+      { consumerKey: config.pesapalConsumerKey, consumerSecret: config.pesapalConsumerSecret, environment: config.pesapalEnvironment },
+      config.pesapalIpnUrl
+    );
+    config.pesapalIpnId = ipnId;
+    await config.save();
+    await logAction(req.user!.id, "REGISTER_PESAPAL_IPN", `Registered Pesapal IPN: ${ipnId}`);
+    res.json({ success: true, ipnId });
+  } catch (err: any) {
+    console.error("Pesapal IPN registration error:", err?.response?.data || err.message);
+    res.status(500).json({ message: err?.response?.data?.error?.message || err.message || "IPN registration failed" });
+  }
 });
 
 // GET /admin/deposits
