@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { ArrowDownToLine, ArrowUpFromLine, Loader2, Smartphone, CheckCircle2, Share2, Copy, XCircle, Globe, ExternalLink } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, Loader2, Smartphone, CheckCircle2, Share2, Copy, XCircle, Globe, ExternalLink, Wallet, TrendingDown, TrendingUp } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -35,18 +35,37 @@ export default function TransactionsPage() {
 
   return (
     <UserLayout>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-        <div>
-          <h1 className="text-3xl font-display font-bold text-white">Wallet</h1>
-          <p className="text-muted-foreground mt-1">Manage your funds and transaction history.</p>
-        </div>
-        <div className="flex gap-3">
-          <Button variant="outline" className="border-primary text-primary hover:bg-primary hover:text-primary-foreground" onClick={() => setDepositOpen(true)}>
-            <ArrowDownToLine className="w-4 h-4 mr-2" /> Deposit
-          </Button>
-          <Button className="bg-white text-black hover:bg-gray-200" onClick={() => setWithdrawOpen(true)}>
-            <ArrowUpFromLine className="w-4 h-4 mr-2" /> Withdraw
-          </Button>
+      <div className="mb-6">
+        <h1 className="text-3xl font-display font-bold text-white">Wallet</h1>
+        <p className="text-muted-foreground mt-1">Manage your funds and transaction history.</p>
+      </div>
+
+      {/* Balance Card */}
+      <div className="relative rounded-2xl overflow-hidden mb-6 bg-gradient-to-br from-primary/20 via-primary/10 to-transparent border border-primary/30">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,_rgba(220,38,38,0.15)_0%,_transparent_60%)] pointer-events-none" />
+        <div className="relative p-6">
+          <div className="flex items-center gap-2 mb-1">
+            <Wallet className="w-4 h-4 text-primary" />
+            <span className="text-sm text-muted-foreground font-medium">Available Balance</span>
+          </div>
+          <div className="text-5xl font-display font-black text-white tracking-tight mb-6">
+            {formatCurrency(user?.balance ?? 0)}
+          </div>
+          <div className="flex gap-3">
+            <Button
+              className="flex-1 h-11 bg-primary text-primary-foreground font-bold hover:bg-primary/90"
+              onClick={() => setDepositOpen(true)}
+            >
+              <ArrowDownToLine className="w-4 h-4 mr-2" /> Deposit
+            </Button>
+            <Button
+              variant="outline"
+              className="flex-1 h-11 border-white/20 text-white hover:bg-white/10 font-bold"
+              onClick={() => setWithdrawOpen(true)}
+            >
+              <ArrowUpFromLine className="w-4 h-4 mr-2" /> Withdraw
+            </Button>
+          </div>
         </div>
       </div>
 
