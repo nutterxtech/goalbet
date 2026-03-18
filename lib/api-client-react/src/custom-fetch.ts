@@ -98,26 +98,21 @@ function truncate(text: string, maxLength = 300): string {
 }
 
 function buildErrorMessage(response: Response, data: unknown): string {
-  const prefix = `HTTP ${response.status} ${response.statusText}`;
-
+  // Return only the human-readable message from the API response — no HTTP prefix.
+  // Status code and statusText remain accessible via err.status / err.statusText.
   if (typeof data === "string") {
     const text = data.trim();
-    return text ? `${prefix}: ${truncate(text)}` : prefix;
+    return text || "Something went wrong. Please try again.";
   }
 
-  const title = getStringField(data, "title");
-  const detail = getStringField(data, "detail");
   const message =
     getStringField(data, "message") ??
     getStringField(data, "error_description") ??
-    getStringField(data, "error");
+    getStringField(data, "detail") ??
+    getStringField(data, "error") ??
+    getStringField(data, "title");
 
-  if (title && detail) return `${prefix}: ${title} — ${detail}`;
-  if (detail) return `${prefix}: ${detail}`;
-  if (message) return `${prefix}: ${message}`;
-  if (title) return `${prefix}: ${title}`;
-
-  return prefix;
+  return message || "Something went wrong. Please try again.";
 }
 
 export class ApiError<T = unknown> extends Error {
