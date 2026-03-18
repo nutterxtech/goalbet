@@ -7,7 +7,7 @@ import { BetSlip } from "../models/BetSlip.js";
 import { Notification } from "../models/Notification.js";
 import { Match } from "../models/Match.js";
 import { getConfig } from "../models/PlatformConfig.js";
-import { initiateSTKPush } from "../services/darajaService.js";
+import { initiateSTKPush, querySTKPush } from "../services/darajaService.js";
 import { submitPesapalOrder, getPesapalOrderStatus } from "../services/pesapalService.js";
 
 const router = Router();
@@ -196,10 +196,69 @@ router.post("/deposit/mpesa", async (req: AuthRequest, res) => {
 });
 
 // GET /user/deposit/mpesa/status/:transactionId — poll for STK push result
+// If still pending after 30s, actively queries Safaricom to confirm payment
 router.get("/deposit/mpesa/status/:transactionId", async (req: AuthRequest, res) => {
   try {
     const tx = await Transaction.findOne({ _id: req.params.transactionId, userId: req.user!.id });
     if (!tx) { res.status(404).json({ message: "Transaction not found" }); return; }
+
+    // If already resolved, return immediately
+    if (tx.status !== "pending") {
+      res.json({ status: tx.status, amount: tx.amount });
+      return;
+    }
+
+    // If pending and >30s old AND we have a CheckoutRequestID, query Safaricom directly
+    const ageSeconds = (Date.now() - new Date(tx.createdAt).getTime()) / 1000;
+    if (ageSeconds > 30 && tx.mpesaCheckoutRequestId) {
+      try {
+        const config = await getConfig();
+        if (config.mpesaConfigured && config.mpesaConsumerKey) {
+          const queryResult = await querySTKPush(
+            {
+              consumerKey: config.mpesaConsumerKey,
+              consumerSecret: config.mpesaConsumerSecret,
+              shortCode: config.mpesaShortCode,
+              passkey: config.mpesaPasskey,
+              callbackUrl: config.mpesaCallbackUrl,
+              environment: config.mpesaEnvironment,
+            },
+            tx.mpesaCheckoutRequestId
+          );
+
+          if (queryResult.ResultCode === "0") {
+            // Payment confirmed — credit the user
+            tx.status = "completed";
+            await tx.save();
+
+            const user = await User.findByIdAndUpdate(
+              tx.userId,
+              { $inc: { balance: tx.amount, totalDeposits: tx.amount } },
+              { new: true }
+            );
+            await Notification.create({
+              userId: tx.userId,
+              type: "deposit",
+              message: `✅ M-Pesa deposit of KSh ${tx.amount} confirmed. Balance: KSh ${user!.balance.toFixed(2)}`,
+              data: { amount: tx.amount },
+            });
+            res.json({ status: "completed", amount: tx.amount });
+            return;
+          } else if (["1032", "1037", "1025", "9999"].includes(queryResult.ResultCode)) {
+            // Definitively cancelled/timed out
+            tx.status = "failed";
+            await tx.save();
+            res.json({ status: "failed", amount: tx.amount, reason: queryResult.ResultDesc });
+            return;
+          }
+          // Other codes = still processing, stay pending
+        }
+      } catch (queryErr: any) {
+        // STK query failed (e.g. sandbox limitation) — just return current DB status
+        console.warn("STK query failed, using DB status:", queryErr?.response?.data?.errorMessage || queryErr.message);
+      }
+    }
+
     res.json({ status: tx.status, amount: tx.amount });
   } catch {
     res.status(500).json({ message: "Server error" });

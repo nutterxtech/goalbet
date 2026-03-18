@@ -88,6 +88,33 @@ export interface B2CResult {
   ResponseDescription: string;
 }
 
+export interface STKQueryResult {
+  ResponseCode: string;
+  ResultCode: string;
+  ResultDesc: string;
+}
+
+export async function querySTKPush(
+  creds: MpesaCredentials,
+  checkoutRequestId: string
+): Promise<STKQueryResult> {
+  const token = await getAccessToken(creds);
+  const ts = timestamp();
+  const password = Buffer.from(`${creds.shortCode}${creds.passkey}${ts}`).toString("base64");
+
+  const res = await axios.post(
+    `${baseUrl(creds.environment)}/mpesa/stkpushquery/v1/query`,
+    {
+      BusinessShortCode: creds.shortCode,
+      Password: password,
+      Timestamp: ts,
+      CheckoutRequestID: checkoutRequestId,
+    },
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  return res.data;
+}
+
 export async function initiateB2C(
   creds: MpesaCredentials,
   phoneNumber: string,

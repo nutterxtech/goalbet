@@ -936,6 +936,46 @@ router.post("/pesapal/register-ipn", async (req: AuthRequest, res) => {
   }
 });
 
+// POST /admin/deposits/:transactionId/credit — manually credit a pending/failed deposit
+router.post("/deposits/:transactionId/credit", async (req: AuthRequest, res) => {
+  try {
+    const tx = await Transaction.findOne({ _id: req.params.transactionId, type: "deposit" });
+    if (!tx) { res.status(404).json({ message: "Transaction not found" }); return; }
+
+    if (tx.status === "completed") {
+      res.status(400).json({ message: "Transaction is already completed" });
+      return;
+    }
+
+    const prevStatus = tx.status;
+    tx.status = "completed";
+    tx.processedBy = req.user!.id as any;
+    tx.processedAt = new Date();
+    tx.description = tx.description + " [manually credited by admin]";
+    await tx.save();
+
+    const user = await User.findByIdAndUpdate(
+      tx.userId,
+      { $inc: { balance: tx.amount, totalDeposits: tx.amount } },
+      { new: true }
+    );
+
+    await Notification.create({
+      userId: tx.userId,
+      type: "deposit",
+      message: `✅ Deposit of KSh ${tx.amount} has been credited to your account by admin. Balance: KSh ${user!.balance.toFixed(2)}`,
+      data: { amount: tx.amount },
+    });
+
+    await logAction(req.user!.id, "MANUAL_CREDIT_DEPOSIT", `Credited deposit ${tx.id} (KSh ${tx.amount}) for user ${tx.userId} — was ${prevStatus}`);
+
+    res.json({ success: true, amount: tx.amount, newBalance: user!.balance });
+  } catch (err: any) {
+    console.error("Manual credit error:", err.message);
+    res.status(500).json({ message: "Failed to credit deposit" });
+  }
+});
+
 // GET /admin/deposits
 router.get("/deposits", async (req: AuthRequest, res) => {
   const page = Number(req.query.page) || 1;
