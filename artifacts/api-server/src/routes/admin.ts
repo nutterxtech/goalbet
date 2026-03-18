@@ -996,6 +996,45 @@ router.post("/deposits/:transactionId/credit", async (req: AuthRequest, res) => 
   }
 });
 
+// POST /admin/deposits/:transactionId/cancel — reject a pending/failed deposit (no balance change)
+router.post("/deposits/:transactionId/cancel", async (req: AuthRequest, res) => {
+  try {
+    const tx = await Transaction.findOne({ _id: req.params.transactionId, type: "deposit" });
+    if (!tx) { res.status(404).json({ message: "Transaction not found" }); return; }
+
+    if (tx.status === "completed") {
+      res.status(400).json({ message: "Cannot cancel an already completed deposit" });
+      return;
+    }
+    if (tx.status === "rejected") {
+      res.status(400).json({ message: "Deposit is already cancelled" });
+      return;
+    }
+
+    const { reason = "Payment not received" } = req.body;
+    const prevStatus = tx.status;
+    tx.status = "rejected";
+    tx.processedBy = req.user!.id as any;
+    tx.processedAt = new Date();
+    tx.description = tx.description + ` [cancelled by admin: ${reason}]`;
+    await tx.save();
+
+    await Notification.create({
+      userId: tx.userId,
+      type: "deposit",
+      message: `❌ Your deposit of KSh ${tx.amount} could not be confirmed and has been cancelled. Reason: ${reason}. If you believe this is an error, please contact support.`,
+      data: { amount: tx.amount },
+    });
+
+    await logAction(req.user!.id, "CANCEL_DEPOSIT", `Cancelled deposit ${tx.id} (KSh ${tx.amount}) for user ${tx.userId} — was ${prevStatus}. Reason: ${reason}`);
+
+    res.json({ success: true, message: "Deposit cancelled" });
+  } catch (err: any) {
+    console.error("Cancel deposit error:", err.message);
+    res.status(500).json({ message: "Failed to cancel deposit" });
+  }
+});
+
 // GET /admin/deposits
 router.get("/deposits", async (req: AuthRequest, res) => {
   const page = Number(req.query.page) || 1;
