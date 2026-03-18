@@ -56,104 +56,99 @@ function Countdown({ targetDate, label = "" }: { targetDate: string; label?: str
 
 // ─── Feature Quick-Access Panel ────────────────────────────────────────────────
 function FeaturePanel({ balance }: { balance: number }) {
-  const tiles = [
-    {
-      href: "/dashboard/my-bets",
-      icon: History,
-      label: "My Bets",
-      sub: "View all slips",
-      gradient: "from-violet-600 to-violet-800",
-      border: "border-violet-500/40",
-      shadow: "hover:shadow-[0_0_20px_rgba(139,92,246,0.3)]",
-      iconBg: "bg-violet-500/30",
-      textColor: "text-violet-300",
-    },
-    {
-      href: "/dashboard/lucky-wheel",
-      icon: Sparkles,
-      label: "Lucky Wheel",
-      sub: "Spin to win up to 10×",
-      gradient: "from-emerald-600 to-green-800",
-      border: "border-primary/40",
-      shadow: "hover:shadow-[0_0_20px_rgba(0,230,92,0.35)]",
-      iconBg: "bg-primary/30",
-      textColor: "text-primary",
-      isNew: true,
-    },
-    {
-      href: "/dashboard/leaderboard",
-      icon: Trophy,
-      label: "Leaderboard",
-      sub: "Top earners today",
-      gradient: "from-yellow-600 to-yellow-800",
-      border: "border-yellow-500/40",
-      shadow: "hover:shadow-[0_0_20px_rgba(234,179,8,0.3)]",
-      iconBg: "bg-yellow-500/30",
-      textColor: "text-yellow-300",
-    },
-    {
-      href: "/dashboard/notifications",
-      icon: Bell,
-      label: "Notifications",
-      sub: "Alerts & updates",
-      gradient: "from-pink-600 to-pink-800",
-      border: "border-pink-500/40",
-      shadow: "hover:shadow-[0_0_20px_rgba(236,72,153,0.3)]",
-      iconBg: "bg-pink-500/30",
-      textColor: "text-pink-300",
-    },
+  const miniTiles = [
+    { href: "/dashboard/my-bets", icon: History, label: "My Bets", sub: "All slips", color: "text-violet-400", bg: "bg-violet-500/15 border-violet-500/30 hover:bg-violet-500/25" },
+    { href: "/dashboard/leaderboard", icon: Trophy, label: "Leaderboard", sub: "Top earners", color: "text-yellow-400", bg: "bg-yellow-500/15 border-yellow-500/30 hover:bg-yellow-500/25" },
+    { href: "/dashboard/notifications", icon: Bell, label: "Alerts", sub: "Notifications", color: "text-pink-400", bg: "bg-pink-500/15 border-pink-500/30 hover:bg-pink-500/25" },
+    { href: "/dashboard/transactions", icon: TrendingUp, label: "Wallet", sub: "Transactions", color: "text-sky-400", bg: "bg-sky-500/15 border-sky-500/30 hover:bg-sky-500/25" },
   ];
 
   return (
-    <div className="mb-8">
-      {/* Balance hero strip */}
-      <div className="bg-gradient-to-r from-primary/20 via-emerald-900/20 to-transparent border border-primary/30 rounded-2xl p-5 mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-[0_0_32px_rgba(0,230,92,0.1)]">
+    <div className="mb-8 space-y-4">
+      {/* ── Top row: Balance + Deposit/Withdraw ── */}
+      <div className="bg-gradient-to-r from-[#0e1f14] via-[#0a1a10] to-[#0d0d14] border border-primary/25 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-[0_0_40px_rgba(0,230,92,0.08)]">
         <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-primary/20 border-2 border-primary/40 flex items-center justify-center shadow-[0_0_16px_rgba(0,230,92,0.3)]">
+          <div className="relative w-14 h-14 rounded-2xl bg-primary/15 border border-primary/30 flex items-center justify-center">
             <Wallet className="h-7 w-7 text-primary" />
+            <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-primary animate-ping opacity-60" />
           </div>
           <div>
-            <p className="text-xs text-muted-foreground uppercase tracking-widest font-bold mb-0.5">Available Balance</p>
-            <p className="text-3xl font-display font-black text-primary tracking-tight leading-none">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-[0.15em] font-bold mb-0.5">Available Balance</p>
+            <p className="text-3xl sm:text-4xl font-display font-black text-primary tracking-tight leading-none">
               {formatCurrency(balance)}
             </p>
           </div>
         </div>
-        <div className="flex gap-2 shrink-0">
+        <div className="flex gap-2.5 shrink-0">
           <Link href="/dashboard/transactions">
-            <Button className="bg-primary text-primary-foreground font-bold hover:bg-primary/90 shadow-[0_0_16px_rgba(0,230,92,0.3)] h-10">
+            <Button className="bg-primary text-primary-foreground font-bold hover:bg-primary/90 shadow-[0_0_16px_rgba(0,230,92,0.25)] h-10 px-5">
               <ArrowDownToLine className="w-4 h-4 mr-1.5" /> Deposit
             </Button>
           </Link>
           <Link href="/dashboard/transactions">
-            <Button variant="outline" className="border-primary/40 text-primary hover:bg-primary/10 font-bold h-10">
+            <Button variant="outline" className="border-primary/30 text-primary hover:bg-primary/10 font-bold h-10 px-5">
               <ArrowUpFromLine className="w-4 h-4 mr-1.5" /> Withdraw
             </Button>
           </Link>
         </div>
       </div>
 
-      {/* Feature tiles grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {tiles.map((tile) => {
+      {/* ── Lucky Wheel hero banner ── */}
+      <Link href="/dashboard/lucky-wheel">
+        <div className="relative overflow-hidden rounded-2xl border-2 border-yellow-400/50 cursor-pointer group transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_0_50px_rgba(250,204,21,0.35)] shadow-[0_0_30px_rgba(250,204,21,0.15)]"
+          style={{ background: "linear-gradient(135deg, #1a1200 0%, #2d1f00 30%, #1a0d00 60%, #0d0d14 100%)" }}>
+          {/* Animated glow orbs */}
+          <div className="absolute -top-8 -left-8 w-40 h-40 bg-yellow-500/20 rounded-full blur-3xl animate-pulse" />
+          <div className="absolute -bottom-8 -right-8 w-48 h-48 bg-orange-500/15 rounded-full blur-3xl animate-pulse" style={{ animationDelay: "1s" }} />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-24 bg-yellow-400/5 rounded-full blur-2xl" />
+
+          <div className="relative z-10 flex items-center justify-between p-5 sm:p-6">
+            {/* Left: text */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[9px] font-black uppercase tracking-[0.2em] bg-yellow-400/20 border border-yellow-400/40 text-yellow-300 px-2 py-0.5 rounded-full">🔥 HOT</span>
+                <span className="text-[9px] font-black uppercase tracking-[0.2em] bg-primary/20 border border-primary/40 text-primary px-2 py-0.5 rounded-full">FREE SPINS</span>
+              </div>
+              <h3 className="text-xl sm:text-2xl font-display font-black text-white leading-tight">
+                Lucky <span className="text-yellow-400">Wheel</span>
+              </h3>
+              <p className="text-sm text-yellow-200/70 mt-0.5 font-medium">Spin &amp; win up to <span className="text-yellow-400 font-black">10×</span> your stake!</p>
+              <div className="flex flex-wrap gap-1.5 mt-3">
+                {["2×", "3×", "5×", "10×"].map((m) => (
+                  <span key={m} className="text-[10px] font-black bg-yellow-400/10 border border-yellow-400/30 text-yellow-300 px-2 py-0.5 rounded-md">{m}</span>
+                ))}
+              </div>
+            </div>
+
+            {/* Right: spinning wheel icon + CTA */}
+            <div className="flex flex-col items-center gap-3 ml-4 shrink-0">
+              <div className="relative w-20 h-20 sm:w-24 sm:h-24">
+                {/* Outer glow ring */}
+                <div className="absolute inset-0 rounded-full bg-gradient-to-br from-yellow-400/30 to-orange-500/20" style={{ animation: "spin 8s linear infinite" }} />
+                <div className="absolute inset-1 rounded-full border-2 border-yellow-400/40 border-dashed" style={{ animation: "spin 12s linear infinite reverse" }} />
+                {/* Center wheel */}
+                <div className="absolute inset-3 rounded-full bg-gradient-to-br from-yellow-500 via-orange-500 to-yellow-600 flex items-center justify-center shadow-[0_0_20px_rgba(250,204,21,0.5)] group-hover:scale-110 transition-transform duration-300">
+                  <Sparkles className="w-7 h-7 sm:w-9 sm:h-9 text-white drop-shadow-lg animate-pulse" />
+                </div>
+              </div>
+              <span className="text-xs font-black bg-yellow-400 text-black px-4 py-1.5 rounded-full group-hover:bg-yellow-300 transition-colors shadow-[0_0_12px_rgba(250,204,21,0.4)]">
+                SPIN NOW →
+              </span>
+            </div>
+          </div>
+        </div>
+      </Link>
+
+      {/* ── Mini nav tiles ── */}
+      <div className="grid grid-cols-4 gap-2.5">
+        {miniTiles.map((tile) => {
           const Icon = tile.icon;
           return (
-            <Link key={tile.href + tile.label} href={tile.href}>
-              <div className={`
-                relative overflow-hidden rounded-xl border bg-gradient-to-br ${tile.gradient} ${tile.border}
-                p-4 cursor-pointer transition-all duration-200 hover:-translate-y-1 hover:scale-[1.03] ${tile.shadow}
-                flex flex-col gap-2 h-full
-              `}>
-                {tile.isNew && (
-                  <span className="absolute top-2 right-2 text-[8px] font-black bg-primary text-primary-foreground px-1.5 py-0.5 rounded-full">NEW</span>
-                )}
-                <div className={`w-9 h-9 rounded-xl ${tile.iconBg} flex items-center justify-center border border-white/10`}>
-                  <Icon className={`h-5 w-5 ${tile.textColor}`} />
-                </div>
-                <div>
-                  <p className={`font-bold text-sm ${tile.textColor} leading-tight`}>{tile.label}</p>
-                  <p className="text-[10px] text-white/50 leading-tight mt-0.5">{tile.sub}</p>
-                </div>
+            <Link key={tile.href} href={tile.href}>
+              <div className={`relative rounded-xl border ${tile.bg} p-3 cursor-pointer transition-all duration-200 hover:-translate-y-0.5 flex flex-col items-center gap-1.5 text-center`}>
+                <Icon className={`h-5 w-5 ${tile.color}`} />
+                <p className={`font-bold text-[11px] ${tile.color} leading-none`}>{tile.label}</p>
+                <p className="text-[9px] text-white/40 leading-none hidden sm:block">{tile.sub}</p>
               </div>
             </Link>
           );

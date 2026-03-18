@@ -22,6 +22,7 @@ export interface IBetSlip extends Document {
   actualWinnings: number;
   createdAt: Date;
   settledAt?: Date;
+  adminNote?: string;
 }
 
 export function generateSlipId(): string {
@@ -52,6 +53,7 @@ const BetSlipSchema = new Schema<IBetSlip>(
     status: { type: String, enum: ["pending", "won", "lost", "refunded"], default: "pending" },
     actualWinnings: { type: Number, default: 0 },
     settledAt: Date,
+    adminNote: { type: String },
   },
   { timestamps: true }
 );

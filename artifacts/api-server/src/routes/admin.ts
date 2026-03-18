@@ -18,6 +18,15 @@ import {
 const router = Router();
 router.use(requireAdmin);
 
+const ODDS_MAX = 4.5;
+const ODDS_MIN = 1.01;
+function clampOdds(v: number): number {
+  return parseFloat(Math.min(Math.max(Number(v) || ODDS_MIN, ODDS_MIN), ODDS_MAX).toFixed(2));
+}
+function sanitizeOdds(odds: { home: number; draw: number; away: number }) {
+  return { home: clampOdds(odds.home), draw: clampOdds(odds.draw), away: clampOdds(odds.away) };
+}
+
 async function logAction(adminId: string, action: string, description: string, targetId?: string, targetType?: string) {
   await ActivityLog.create({ action, adminId, description, targetId, targetType });
 }
@@ -224,10 +233,11 @@ router.post("/matches", async (req: AuthRequest, res) => {
       return;
     }
 
+    const safeOdds = sanitizeOdds(odds);
     const match = await Match.create({
       homeTeam,
       awayTeam,
-      odds,
+      odds: safeOdds,
       status: "upcoming",
       scheduledAt: scheduledAt ? new Date(scheduledAt) : undefined,
     });
@@ -360,7 +370,8 @@ router.put("/matches/:id/odds", async (req: AuthRequest, res) => {
     return;
   }
 
-  const match = await Match.findByIdAndUpdate(req.params.id, { odds }, { new: true });
+  const safeOdds = sanitizeOdds(odds);
+  const match = await Match.findByIdAndUpdate(req.params.id, { odds: safeOdds }, { new: true });
   if (!match) {
     res.status(404).json({ message: "Match not found" });
     return;

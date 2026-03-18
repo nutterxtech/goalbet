@@ -183,27 +183,31 @@ async function settleBets(match: IMatch, _finalHome: number, _finalAway: number)
       const userLosses = userDoc?.consecutiveLosses ?? 0;
 
       // Rule 1 — Hard cap: user cannot lose more than MAX_CONSECUTIVE_LOSSES in a row.
-      // After 9 straight losses, force the NEXT slip to win regardless of stake.
       if (userLosses >= MAX_CONSECUTIVE_LOSSES) {
         for (const sel of slip.selections) sel.status = "won";
         consolationWinApplied = true;
-        console.log(`🎁 Loss-cap win: user ${slip.userId} hit ${userLosses} consecutive losses — forced win on slip #${slip.slipId}`);
+        const msg = `[FAIRNESS-WIN R1] Slip #${slip.slipId} user ${slip.userId} — forced win after ${userLosses} consecutive losses`;
+        console.log(`🎁 ${msg}`);
+        slip.adminNote = msg;
       }
 
-      // Rule 2 — Big-loss consolation: after losing ≥ KSh 500, give next small bet as win.
+      // Rule 2 — Big-loss consolation: after losing ≥ KSh 500, next small bet wins.
       if (!consolationWinApplied && userDoc?.pendingConsolationWin && slip.stake <= SMALL_WIN_THRESHOLD) {
         for (const sel of slip.selections) sel.status = "won";
         consolationWinApplied = true;
         await User.findByIdAndUpdate(slip.userId, { pendingConsolationWin: false });
-        console.log(`🎁 Consolation win: user ${slip.userId} lost big previously — forced win on slip #${slip.slipId}`);
+        const msg = `[FAIRNESS-WIN R2] Slip #${slip.slipId} user ${slip.userId} — consolation win after big loss (stake KSh ${slip.stake})`;
+        console.log(`🎁 ${msg}`);
+        slip.adminNote = msg;
       }
 
       // Rule 3 — Small-bet win boost: slips ≤ KSh 100 win ~20% of the time
-      // independently of the match result (gives ~2 wins per 10 small bets).
       if (!consolationWinApplied && !recoveryMode && slip.stake <= SMALL_BET_CAP && Math.random() < SMALL_BET_WIN_RATE) {
         for (const sel of slip.selections) sel.status = "won";
         consolationWinApplied = true;
-        console.log(`🎁 Small-bet win boost: slip #${slip.slipId} (KSh ${slip.stake}) given win`);
+        const msg = `[FAIRNESS-WIN R3] Slip #${slip.slipId} user ${slip.userId} — small-bet win boost (stake KSh ${slip.stake})`;
+        console.log(`🎁 ${msg}`);
+        slip.adminNote = msg;
       }
     }
     // ─────────────────────────────────────────────────────────────────────────
@@ -219,8 +223,11 @@ async function settleBets(match: IMatch, _finalHome: number, _finalAway: number)
       await slip.save();
       await User.findByIdAndUpdate(slip.userId, {
         $inc: { balance: winnings, totalWins: 1, totalWinnings: winnings },
-        $set: { consecutiveLosses: 0 }, // reset streak on any win
+        $set: { consecutiveLosses: 0 },
       });
+      const txDesc = consolationWinApplied
+        ? `Winnings from slip #${slip.slipId} (${slip.selections.length} selections) — fairness win applied`
+        : `Winnings from slip #${slip.slipId} (${slip.selections.length} selections)`;
       await Transaction.create({
         userId: slip.userId,
         type: "winnings",
@@ -228,12 +235,12 @@ async function settleBets(match: IMatch, _finalHome: number, _finalAway: number)
         fee: 0,
         netAmount: winnings,
         status: "completed",
-        description: `Winnings from slip #${slip.slipId} (${slip.selections.length} selections)`,
+        description: txDesc,
       });
       await Notification.create({
         userId: slip.userId,
         type: "bet_won",
-        message: `🎉 Slip #${slip.slipId} WON! You won KSh ${winnings.toFixed(2)}! All ${slip.selections.length} selections correct!`,
+        message: `🎉 Slip #${slip.slipId} WON! You won KSh ${winnings.toFixed(2)}!`,
         data: { slipId: slip.slipId, winnings },
       });
     } else if (finallyLost) {
@@ -739,7 +746,7 @@ export function startAutoScheduler(): void {
         const drawProb = 0.20 + Math.random() * 0.18; // 20–38%
         const margin = 1.06 + Math.random() * 0.06;   // 6–12% margin
         const rawDraw = (1 / drawProb) / margin;
-        const newDrawOdds = parseFloat(Math.min(rawDraw, 3.5).toFixed(2));
+        const newDrawOdds = parseFloat(Math.min(Math.max(rawDraw, 1.01), 4.5).toFixed(2));
         await Match.findByIdAndUpdate(m._id, { "odds.draw": newDrawOdds });
         console.log(`🔧 Patched draw odds for ${m.homeTeam} vs ${m.awayTeam}: 6.67 → ${newDrawOdds}`);
       }
@@ -824,11 +831,13 @@ export function startAutoScheduler(): void {
 
           // Add a small margin so the book overrounds slightly (house edge)
           const margin = 1.05;
-          const homeOdds = parseFloat(((1 / homeStrength) / margin).toFixed(2));
-          const awayOdds = parseFloat(((1 / awayStrength) / margin).toFixed(2));
-          // Draw odds vary per match and never exceed 3.5
+          const MAX_ODDS = 4.5;
+          const MIN_ODDS = 1.01;
+          const homeOdds = parseFloat(Math.min(Math.max((1 / homeStrength) / margin, MIN_ODDS), MAX_ODDS).toFixed(2));
+          const awayOdds = parseFloat(Math.min(Math.max((1 / awayStrength) / margin, MIN_ODDS), MAX_ODDS).toFixed(2));
+          // Draw odds vary per match — capped at MAX_ODDS
           const rawDraw = (1 / drawProb) / margin;
-          const drawOdds = parseFloat(Math.min(rawDraw, 3.5).toFixed(2));
+          const drawOdds = parseFloat(Math.min(Math.max(rawDraw, MIN_ODDS), MAX_ODDS).toFixed(2));
 
           const startDelay = (created + 1) * 2 * 60 * 1000;
 
