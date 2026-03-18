@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "wouter";
+import { usePublicConfig } from "@/hooks/usePublicConfig";
 import { UserLayout } from "@/components/layout/UserLayout";
 import {
   useGetMatches,
@@ -477,7 +478,10 @@ function SlipPanel({ slip, open, onClose, onRemove, onClear, onSuccess }: {
   onClear: () => void;
   onSuccess: (slip: BetSlipResponse) => void;
 }) {
-  const [stake, setStake] = useState("50");
+  const config = usePublicConfig();
+  const minBet = config.minBet;
+  const maxBet = config.maxBetAmount;
+  const [stake, setStake] = useState(() => String(config.minBet > 50 ? config.minBet : 50));
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -500,7 +504,8 @@ function SlipPanel({ slip, open, onClose, onRemove, onClear, onSuccess }: {
   });
 
   const handlePlace = () => {
-    if (numStake < 5) { toast({ title: "Minimum stake is KSh 5", variant: "destructive" }); return; }
+    if (numStake < minBet) { toast({ title: `Minimum stake is ${formatCurrency(minBet)}`, variant: "destructive" }); return; }
+    if (numStake > maxBet) { toast({ title: `Maximum stake is ${formatCurrency(maxBet)}`, variant: "destructive" }); return; }
     placeMutation.mutate({ data: { selections: slip.map((s) => ({ matchId: s.matchId, outcome: s.outcome })), stake: numStake } });
   };
 
@@ -536,11 +541,13 @@ function SlipPanel({ slip, open, onClose, onRemove, onClear, onSuccess }: {
 
         <div className="space-y-4 pt-2">
           <div>
-            <label className="text-sm font-medium text-muted-foreground">Stake (KSh)</label>
-            <Input type="number" min="5" value={stake} onChange={(e) => setStake(e.target.value)}
+            <label className="text-sm font-medium text-muted-foreground">
+              Stake (KSh) — Min {formatCurrency(minBet)}{maxBet < 999999 ? `, Max ${formatCurrency(maxBet)}` : ""}
+            </label>
+            <Input type="number" min={minBet} max={maxBet} value={stake} onChange={(e) => setStake(e.target.value)}
               className="text-lg font-bold h-12 bg-background border-border mt-1" />
             <div className="flex gap-2 mt-2">
-              {[20, 50, 100, 500].map((val) => (
+              {[minBet, Math.max(minBet, 50), 100, 500].filter((v, i, a) => a.indexOf(v) === i).map((val) => (
                 <button key={val} onClick={() => setStake(val.toString())}
                   className={`flex-1 py-1.5 text-xs font-bold rounded-lg border transition-all ${
                     stake === String(val) ? "bg-primary/20 border-primary text-primary" : "border-border/50 bg-secondary/30 text-muted-foreground hover:border-primary/40"

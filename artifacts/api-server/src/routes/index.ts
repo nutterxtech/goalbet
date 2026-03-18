@@ -7,10 +7,12 @@ import betsRouter from "./bets.js";
 import leaderboardRouter from "./leaderboard.js";
 import adminRouter from "./admin.js";
 import spinRouter from "./spin.js";
+import publicRouter from "./public.js";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
+router.use("/public", publicRouter);
 router.use("/auth", authRouter);
 router.use("/user", userRouter);
 router.use("/matches", matchesRouter);

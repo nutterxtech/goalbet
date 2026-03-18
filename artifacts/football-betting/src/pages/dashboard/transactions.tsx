@@ -3,6 +3,7 @@ import { UserLayout } from "@/components/layout/UserLayout";
 import { useGetTransactions, useWithdraw } from "@workspace/api-client-react";
 import { API_BASE } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
+import { usePublicConfig } from "@/hooks/usePublicConfig";
 import { Card, CardContent } from "@/components/ui/card";
 
 import { Badge } from "@/components/ui/badge";
@@ -179,6 +180,8 @@ export default function TransactionsPage() {
 }
 
 function DepositModal({ open, onOpenChange }: { open: boolean, onOpenChange: (open: boolean) => void }) {
+  const config = usePublicConfig();
+  const minDeposit = config.minDeposit;
   const [amount, setAmount] = useState("100");
   const [phone, setPhone] = useState("");
   const [step, setStep] = useState<"amount" | "daraja-waiting" | "pesapal-redirect" | "pesapal-waiting" | "success" | "failed">("amount");
@@ -252,7 +255,7 @@ function DepositModal({ open, onOpenChange }: { open: boolean, onOpenChange: (op
   }, [step, orderTrackingId]);
 
   async function initiateDeposit() {
-    if (parsedAmount < 20) return;
+    if (parsedAmount < minDeposit) return;
     setSending(true);
     try {
       const token = localStorage.getItem("goalbet_token");
@@ -304,7 +307,7 @@ function DepositModal({ open, onOpenChange }: { open: boolean, onOpenChange: (op
               <DialogTitle className="flex items-center gap-2">
                 <ArrowDownToLine className="w-5 h-5 text-primary" /> Deposit Funds
               </DialogTitle>
-              <DialogDescription>Enter the amount to deposit. Min KSh 20.</DialogDescription>
+              <DialogDescription>Enter the amount to deposit. Min {formatCurrency(minDeposit)}.</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-2">
               <div className="space-y-2">
@@ -330,10 +333,10 @@ function DepositModal({ open, onOpenChange }: { open: boolean, onOpenChange: (op
               <Button
                 className="w-full h-12 font-bold"
                 onClick={initiateDeposit}
-                disabled={parsedAmount < 20 || sending}
+                disabled={parsedAmount < minDeposit || sending}
               >
                 {sending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ArrowDownToLine className="w-4 h-4 mr-2" />}
-                {sending ? "Connecting..." : `Deposit ${parsedAmount >= 20 ? formatCurrency(parsedAmount) : "KSh 0"}`}
+                {sending ? "Connecting..." : `Deposit ${parsedAmount >= minDeposit ? formatCurrency(parsedAmount) : formatCurrency(0)}`}
               </Button>
             </div>
           </>
@@ -488,6 +491,9 @@ function DepositModal({ open, onOpenChange }: { open: boolean, onOpenChange: (op
 }
 
 function WithdrawModal({ open, onOpenChange }: { open: boolean, onOpenChange: (open: boolean) => void }) {
+  const config = usePublicConfig();
+  const minWithdrawal = config.minWithdrawal;
+  const feePercent = config.withdrawalFeePercent;
   const [amount, setAmount] = useState("");
   const [details, setDetails] = useState("");
   const { toast } = useToast();
@@ -508,29 +514,33 @@ function WithdrawModal({ open, onOpenChange }: { open: boolean, onOpenChange: (o
   });
 
   const numAmount = parseFloat(amount) || 0;
-  const netAmount = numAmount * 0.88; // 12% fee
+  const netAmount = numAmount * (1 - feePercent / 100);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="border-border bg-card">
         <DialogHeader>
           <DialogTitle>Request Withdrawal</DialogTitle>
-          <DialogDescription>Withdraw your winnings (Min KSh 50).</DialogDescription>
+          <DialogDescription>Withdraw your winnings (Min {formatCurrency(minWithdrawal)}, {feePercent}% fee).</DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-4">
           <div className="space-y-2">
             <label className="text-sm text-muted-foreground">Amount (KSh)</label>
             <Input 
               type="number" 
-              placeholder="e.g. 500" 
+              placeholder={`e.g. ${minWithdrawal * 10}`}
               value={amount} 
               onChange={(e) => setAmount(e.target.value)}
             />
           </div>
           
-          {numAmount >= 50 && (
-            <div className="p-3 bg-secondary/50 rounded-lg text-sm border border-border/50">
-              <div className="flex justify-between font-bold text-white">
+          {numAmount >= minWithdrawal && (
+            <div className="p-3 bg-secondary/50 rounded-lg text-sm border border-border/50 space-y-1">
+              <div className="flex justify-between text-muted-foreground">
+                <span>Fee ({feePercent}%)</span>
+                <span>-{formatCurrency(numAmount * (feePercent / 100))}</span>
+              </div>
+              <div className="flex justify-between font-bold text-white border-t border-border/40 pt-1">
                 <span>You will receive:</span>
                 <span className="text-primary">{formatCurrency(netAmount)}</span>
               </div>
@@ -549,7 +559,7 @@ function WithdrawModal({ open, onOpenChange }: { open: boolean, onOpenChange: (o
           <Button 
             className="w-full" 
             onClick={() => mutation.mutate({ data: { amount: numAmount, accountDetails: details } })}
-            disabled={mutation.isPending || numAmount < 50 || !details.trim()}
+            disabled={mutation.isPending || numAmount < minWithdrawal || !details.trim()}
           >
             {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Submit Request
