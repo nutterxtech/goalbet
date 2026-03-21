@@ -52,6 +52,16 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", ts: Date.now() });
 });
 
+// Root — tell humans they have the API URL, not the frontend
+app.get("/", (_req, res) => {
+  res.json({
+    service: "GoalBet API",
+    status: "running",
+    hint: "This is the backend API. Open the GoalBet frontend URL to use the app.",
+    health: "/api/health",
+  });
+});
+
 // Global error handler
 app.use((err: any, _req: any, res: any, _next: any) => {
   console.error("Unhandled error:", err);

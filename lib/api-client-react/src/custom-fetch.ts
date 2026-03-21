@@ -266,11 +266,28 @@ async function parseSuccessBody(
   }
 }
 
+// In production on Render the frontend and API are on separate domains.
+// VITE_API_URL (e.g. "https://goalbet-api.onrender.com") is baked in at build
+// time by Vite. When set, prepend it to every relative /api/... path so the
+// generated hooks reach the correct backend regardless of where the frontend
+// is hosted. Falls back to a relative path (works in development via proxy).
+function resolveInput(input: RequestInfo | URL): RequestInfo | URL {
+  // @ts-ignore – import.meta.env is injected by Vite; fine to ignore in lib ctx
+  const apiBase: string = (typeof import.meta !== "undefined" && (import.meta as any).env?.VITE_API_URL) || "";
+  if (!apiBase) return input;
+  const url = resolveUrl(input);
+  if (!url.startsWith("/")) return input; // already absolute
+  const base = apiBase.replace(/\/$/, "");
+  return base + url;
+}
+
 export async function customFetch<T = unknown>(
   input: RequestInfo | URL,
   options: CustomFetchOptions = {},
 ): Promise<T> {
   const { responseType = "auto", headers: headersInit, ...init } = options;
+
+  input = resolveInput(input);
 
   const method = resolveMethod(input, init.method);
 
