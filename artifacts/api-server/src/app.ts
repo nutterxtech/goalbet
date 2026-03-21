@@ -63,8 +63,9 @@ if (process.env.NODE_ENV === "production") {
   // Static assets (JS, CSS, images)
   app.use(express.static(FRONTEND_DIST));
 
-  // SPA fallback — any unmatched GET returns index.html so client-side routing works
-  app.get("*", (_req, res) => {
+  // SPA fallback — any unmatched route returns index.html so client-side routing works.
+  // Express 5 removed bare "*" wildcard support, so we use app.use here.
+  app.use((_req, res) => {
     res.sendFile(path.join(FRONTEND_DIST, "index.html"));
   });
 }

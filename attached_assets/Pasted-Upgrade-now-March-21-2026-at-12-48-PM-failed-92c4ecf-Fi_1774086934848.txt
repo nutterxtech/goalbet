@@ -1,0 +1,42 @@
+Upgrade now
+March 21, 2026 at 12:48 PM
+failed
+92c4ecf
+Fix error when starting API server by correctly resolving frontend path Replaced `fileURLToPath(import.meta.url)` with `process.cwd()` in `artifacts/api-server/src/app.ts` to correctly resolve the frontend static file path in the bundled CommonJS output. Replit-Commit-Author: Agent Replit-Commit-Session-Id: b0a2bec5-991e-4f26-b2fb-28b6d1f2ed8b Replit-Commit-Checkpoint-Type: full_checkpoint Replit-Commit-Event-Id: 50900761-d53d-4f8e-888f-fc8a3b5742f5 Replit-Commit-Screenshot-Url: https://storage.googleapis.com/screenshot-production-us-central1/9ab43724-dd03-430d-a96c-26969547d590/b0a2bec5-991e-4f26-b2fb-28b6d1f2ed8b/CNaTuok Replit-Helium-Checkpoint-Created: true
+
+Rollback
+Exited with status 1 while running your code.
+Read our docs for common ways to troubleshoot your deploy.
+
+All logs
+Search
+Search
+
+Mar 21, 12:47 PM - 12:51 PM
+GMT+3
+
+
+
+==> Downloading cache...
+==> Cloning from https://github.com/nutterxtech/goalbet
+==> Checking out commit 92c4ecf4a7e9a60e98acf6a2fa849a4b252b002e in branch main
+==> Downloaded 138MB in 4s. Extraction took 10s.
+==> Using Node.js version 22.22.0 (default)
+==> Docs on specifying a Node.js version: https://render.com/docs/node-version
+==> Running build command 'pnpm install --frozen-lockfile; pnpm run build'...
+> workspace@0.0.0 build /opt/render/project/src
+> pnpm run typecheck && pnpm -r --filter '!@workspace/mockup-sandbox' --if-present run build
+> workspace@0.0.0 typecheck /opt/render/project/src
+> pnpm run typecheck:libs && pnpm -r --filter "./artifacts/**" --filter "./scripts" --if-present run typecheck
+> workspace@0.0.0 typecheck:libs /opt/render/project/src
+> tsc --build
+==> Uploading build...
+==> Uploaded in 5.9s. Compression took 7.7s
+==> Build successful 🎉
+==> Deploying...
+==> Setting WEB_CONCURRENCY=1 by default, based on available CPUs in the instance
+==> Running 'pnpm run start'
+> workspace@0.0.0 start /opt/render/project/src
+> node artifacts/api-server/dist/index.cjs
+/opt/render/project/src/artifacts/api-server/dist/index.cjs:31
+`}Mv.exports=J_;function J_(t,e,a){var n=a||{},i=n.env||"production",r=n.onerror;return function(s){var o,p,c;if(!s&&e.headersSent){bp("cannot 404 after headers sent");return}if(s?(c=Y_(s),c===void 0?c=eT(e):o=X_(s),p=Z_(s,c,i)):(c=404,p="Cannot "+t.method+" "+W_(Q_(t))),bp("default %s",c),s&&r&&setImmediate(r,s,t,e),e.headersSent){bp("cannot %d after headers sent",c),t.socket&&t.socket.destroy();return}tT(t,e,c,o,p)}}function X_(t){if(!(!t.headers||typeof t.headers!="object"))return{...t.headers}}function Z_(t,e,a){var n;return a!=="production"&&(n=t.stack,!n&&typeof t.toString=="function"&&(n=t.toString())),n||Lv.message[e]}function Y_(t){if(typeof t.status=="number"&&t.status>=400&&t.status<600)return t.status;if(typeof t.statusCode=="number"&&t.statusCode>=400&&t.statusCode<600)return t.statusCode}function Q_(t){try{return G_.original(t).pathname}catch{return"resource"}}function eT(t){var e=t.statusCode;return(typeof e!="number"||e<400||e>599)&&(e=500),e}function tT(t,e,a,n,i){function r(){var s=K_(i);e.statusCode=a,t.httpVersionMajor<2&&(e.statusMessage=Lv.message[a]),e.removeHeader("Content-Encoding"),e.removeHeader("Content-Language"),e.removeHeader("Content-Range");for(let[o,p]of Object.entries(n??{}))e.setHeader(o,p);if(e.setHeader("Content-Security-Policy","default-src 'none'"),e.setHeader("X-Content-Type-Options","nosniff"),e.setHeader("Content-Type","text/html
