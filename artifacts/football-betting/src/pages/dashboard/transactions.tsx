@@ -196,6 +196,7 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
   const [orderTrackingId, setOrderTrackingId] = useState<string | null>(null);
   const [pesapalUrl, setPesapalUrl] = useState<string | null>(null);
   const [iframeLoading, setIframeLoading] = useState(true);
+  const [iframeBlocked, setIframeBlocked] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -230,6 +231,13 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
     }, 3000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [step, transactionId]);
+
+  // Safety timeout: if iframe still loading after 12s, assume it's blocked by X-Frame-Options
+  useEffect(() => {
+    if (step !== "pesapal-iframe" || !iframeLoading || iframeBlocked) return;
+    const t = setTimeout(() => { setIframeLoading(false); setIframeBlocked(true); }, 12000);
+    return () => clearTimeout(t);
+  }, [step, iframeLoading, iframeBlocked]);
 
   // Poll for Pesapal status (runs while iframe is shown)
   useEffect(() => {
@@ -288,6 +296,7 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
       setOrderTrackingId(null);
       setPesapalUrl(null);
       setIframeLoading(true);
+      setIframeBlocked(false);
     }
     onOpenChange(v);
   }
@@ -298,7 +307,7 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
   const isPesapalIframe = step === "pesapal-iframe";
 
   return (
-    <Drawer open={open} onOpenChange={handleClose}>
+    <Drawer open={open} onOpenChange={handleClose} dismissible={!isPesapalIframe}>
       <DrawerContent
         className="bg-card border-border/60 focus:outline-none"
         style={{ maxHeight: isPesapalIframe ? "96dvh" : "88dvh" }}
@@ -456,8 +465,9 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
               </div>
 
               {/* Iframe container */}
-              <div className="flex-1 relative bg-white overflow-hidden">
-                {iframeLoading && (
+              <div className="flex-1 relative overflow-hidden" style={{ background: "#fff" }}>
+                {/* Loading spinner — shown until iframe fires onLoad */}
+                {iframeLoading && !iframeBlocked && (
                   <div className="absolute inset-0 bg-card flex flex-col items-center justify-center gap-4 z-10">
                     <div className="w-12 h-12 rounded-full border-2 border-blue-400/30 border-t-blue-400 animate-spin" />
                     <div className="text-center">
@@ -466,15 +476,41 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
                     </div>
                   </div>
                 )}
-                {pesapalUrl && (
+
+                {/* Fallback when iframe is blocked by browser security (X-Frame-Options) */}
+                {iframeBlocked && (
+                  <div className="absolute inset-0 bg-card flex flex-col items-center justify-center gap-5 z-10 p-6 text-center">
+                    <div className="w-16 h-16 rounded-full bg-blue-500/10 border border-blue-500/30 flex items-center justify-center">
+                      <Globe className="w-8 h-8 text-blue-400" />
+                    </div>
+                    <div>
+                      <p className="text-base font-bold text-white">Open Pesapal to Pay</p>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Pesapal requires its own window. Tap below to pay — your balance updates here automatically.
+                      </p>
+                    </div>
+                    <Button
+                      className="w-full h-12 font-bold bg-blue-600 hover:bg-blue-700 text-white"
+                      onClick={() => { if (pesapalUrl) window.open(pesapalUrl, "_blank", "noopener"); }}
+                    >
+                      <Globe className="w-4 h-4 mr-2" /> Open Pesapal Payment Page
+                    </Button>
+                    <p className="text-[11px] text-muted-foreground">
+                      After completing payment, return here — your deposit will be confirmed automatically.
+                    </p>
+                  </div>
+                )}
+
+                {pesapalUrl && !iframeBlocked && (
                   <iframe
                     src={pesapalUrl}
                     className="w-full h-full border-0"
-                    style={{ minHeight: "480px" }}
+                    style={{ minHeight: "500px" }}
                     title="Pesapal Payment"
                     allow="payment *"
                     onLoad={() => setIframeLoading(false)}
-                    sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation-by-user-activation"
+                    onError={() => { setIframeLoading(false); setIframeBlocked(true); }}
+                    sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
                   />
                 )}
               </div>
@@ -487,7 +523,9 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
                       <div key={i} className="w-1.5 h-1.5 rounded-full bg-blue-400/60 animate-bounce" style={{ animationDelay: `${i * 0.2}s` }} />
                     ))}
                   </div>
-                  <span className="text-[11px] text-muted-foreground">Watching for payment confirmation...</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    {iframeBlocked ? "Waiting for payment to complete..." : "Watching for payment confirmation..."}
+                  </span>
                 </div>
                 <span className="text-[10px] text-muted-foreground/60">🔒 Secure</span>
               </div>
@@ -538,7 +576,7 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
               </div>
               <DrawerFooter className="px-5 pt-0 pb-6 shrink-0 flex-row gap-2">
                 <Button variant="outline" className="flex-1" onClick={() => handleClose(false)}>Close</Button>
-                <Button className="flex-1 bg-primary text-primary-foreground" onClick={() => { setStep("amount"); setIframeLoading(true); }}>
+                <Button className="flex-1 bg-primary text-primary-foreground" onClick={() => { setStep("amount"); setIframeLoading(true); setIframeBlocked(false); }}>
                   Try Again
                 </Button>
               </DrawerFooter>
