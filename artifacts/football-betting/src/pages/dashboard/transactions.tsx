@@ -562,8 +562,12 @@ function WithdrawDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (
   const feePercent = config.withdrawalFeePercent;
   const [amount, setAmount] = useState("");
   const [details, setDetails] = useState("");
+  const [blockMsg, setBlockMsg] = useState<string | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // Clear block message when drawer is reopened
+  const handleOpenChange = (v: boolean) => { if (!v) { setBlockMsg(null); setAmount(""); setDetails(""); } onOpenChange(v); };
 
   const mutation = useWithdraw({
     mutation: {
@@ -571,11 +575,17 @@ function WithdrawDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (
         toast({ title: "Withdrawal Requested", description: "Your request is pending admin approval." });
         queryClient.invalidateQueries({ queryKey: ["/api/user/balance"] });
         queryClient.invalidateQueries({ queryKey: ["/api/user/transactions"] });
-        onOpenChange(false);
-        setAmount("");
-        setDetails("");
+        handleOpenChange(false);
       },
-      onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" })
+      onError: (err: any) => {
+        const msg: string = err?.message ?? "Something went wrong";
+        // Show referral-block errors as a persistent banner inside the drawer
+        if (msg.toLowerCase().includes("referral") || err?.status === 403) {
+          setBlockMsg(msg);
+        } else {
+          toast({ title: "Error", description: msg, variant: "destructive" });
+        }
+      },
     }
   });
 
@@ -584,7 +594,7 @@ function WithdrawDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (
   const netAmount = numAmount - fee;
 
   return (
-    <Drawer open={open} onOpenChange={onOpenChange}>
+    <Drawer open={open} onOpenChange={handleOpenChange}>
       <DrawerContent className="bg-card border-border/60 focus:outline-none max-h-[88dvh]">
         <div className="mx-auto w-full max-w-md pb-6">
           <DrawerHeader className="pt-2 pb-4 px-5">
@@ -595,6 +605,21 @@ function WithdrawDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (
               Min {formatCurrency(minWithdrawal)} · {feePercent}% processing fee applies.
             </DrawerDescription>
           </DrawerHeader>
+
+          {/* Referral-block warning banner */}
+          {blockMsg && (
+            <div className="mx-5 mb-4 flex gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
+              <span className="text-xl shrink-0">🚫</span>
+              <div>
+                <p className="text-sm font-bold text-amber-300 mb-0.5">Withdrawal Blocked</p>
+                <p className="text-xs text-amber-200/80 leading-relaxed">{blockMsg}</p>
+                <p className="text-xs text-amber-200/60 mt-2">
+                  Head to <strong className="text-amber-300">Matches</strong> to place a bet, or try the{" "}
+                  <strong className="text-amber-300">Lucky Wheel</strong> first.
+                </p>
+              </div>
+            </div>
+          )}
 
           <div className="px-5 space-y-4">
             <div>
@@ -646,7 +671,7 @@ function WithdrawDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (
               {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Submit Request
             </Button>
-            <Button variant="ghost" className="text-muted-foreground" onClick={() => onOpenChange(false)}>
+            <Button variant="ghost" className="text-muted-foreground" onClick={() => handleOpenChange(false)}>
               Cancel
             </Button>
           </DrawerFooter>

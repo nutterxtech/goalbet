@@ -538,6 +538,22 @@ router.post("/withdraw", async (req: AuthRequest, res) => {
       return;
     }
 
+    // Block withdrawal if the user has only referral earnings and has never
+    // placed a bet or spun the wheel — they must participate first.
+    if (user.referralEarnings > 0 && user.totalBets === 0) {
+      const hasSpin = await Transaction.exists({
+        userId: user._id,
+        type: "spin_stake",
+      });
+      if (!hasSpin) {
+        res.status(403).json({
+          message:
+            "You must place at least one bet or spin the lucky wheel before withdrawing referral earnings.",
+        });
+        return;
+      }
+    }
+
     const fee = (amount * config.withdrawalFeePercent) / 100;
     const netAmount = amount - fee;
 
