@@ -54,7 +54,6 @@ export interface PesapalOrderParams {
   phone?: string;
   firstName?: string;
   lastName?: string;
-  paymentMethod?: string;
 }
 
 export interface PesapalOrderResult {
@@ -83,10 +82,6 @@ export async function submitPesapalOrder(
       last_name: params.lastName || "User",
     },
   };
-
-  if (params.paymentMethod) {
-    orderBody.payment_method = params.paymentMethod;
-  }
 
   const res = await axios.post(
     `${baseUrl(creds.environment)}/api/Transactions/SubmitOrderRequest`,

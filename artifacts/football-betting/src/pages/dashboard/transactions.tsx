@@ -15,7 +15,7 @@ import {
 import { formatCurrency, formatDate } from "@/lib/format";
 import {
   ArrowDownToLine, ArrowUpFromLine, Loader2, Smartphone,
-  CheckCircle2, Share2, Copy, XCircle, Wallet, TrendingUp,
+  CheckCircle2, Share2, Copy, XCircle, Wallet, TrendingUp, Globe,
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
@@ -182,18 +182,20 @@ export default function TransactionsPage() {
   );
 }
 
+type DepositStep = "amount" | "daraja-waiting" | "pesapal-iframe" | "success" | "failed";
+
 function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const config = usePublicConfig();
   const minDeposit = config.minDeposit;
   const [amount, setAmount] = useState("100");
   const [phone, setPhone] = useState("");
-  const [step, setStep] = useState<
-    "amount" | "daraja-waiting" | "pesapal-stk-waiting" | "success" | "failed"
-  >("amount");
+  const [step, setStep] = useState<DepositStep>("amount");
   const [sending, setSending] = useState(false);
   const [gateway, setGateway] = useState<"daraja" | "pesapal">("daraja");
   const [transactionId, setTransactionId] = useState<string | null>(null);
   const [orderTrackingId, setOrderTrackingId] = useState<string | null>(null);
+  const [pesapalUrl, setPesapalUrl] = useState<string | null>(null);
+  const [iframeLoading, setIframeLoading] = useState(true);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -212,6 +214,7 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
     queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
   }
 
+  // Poll for Daraja status
   useEffect(() => {
     if (step !== "daraja-waiting" || !transactionId) return;
     pollRef.current = setInterval(async () => {
@@ -228,8 +231,9 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [step, transactionId]);
 
+  // Poll for Pesapal status (runs while iframe is shown)
   useEffect(() => {
-    if (step !== "pesapal-stk-waiting" || !orderTrackingId) return;
+    if (step !== "pesapal-iframe" || !orderTrackingId) return;
     pollRef.current = setInterval(async () => {
       try {
         const token = localStorage.getItem("goalbet_token");
@@ -246,10 +250,6 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
 
   async function initiateDeposit() {
     if (parsedAmount < minDeposit) return;
-    if (!displayPhone.trim()) {
-      toast({ title: "Phone required", description: "Enter your M-Pesa phone number.", variant: "destructive" });
-      return;
-    }
     setSending(true);
     try {
       const token = localStorage.getItem("goalbet_token");
@@ -268,7 +268,9 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
         setStep("daraja-waiting");
       } else if (data.method === "pesapal") {
         setOrderTrackingId(data.orderTrackingId);
-        setStep("pesapal-stk-waiting");
+        setPesapalUrl(data.redirectUrl);
+        setIframeLoading(true);
+        setStep("pesapal-iframe");
       }
     } catch (err: any) {
       toast({ title: "Deposit Error", description: err.message, variant: "destructive" });
@@ -284,6 +286,8 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
       setAmount("100");
       setTransactionId(null);
       setOrderTrackingId(null);
+      setPesapalUrl(null);
+      setIframeLoading(true);
     }
     onOpenChange(v);
   }
@@ -291,24 +295,29 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
   const quickAmounts = [minDeposit, minDeposit * 2, minDeposit * 5, minDeposit * 10]
     .filter((v, i, a) => a.indexOf(v) === i);
 
+  const isPesapalIframe = step === "pesapal-iframe";
+
   return (
     <Drawer open={open} onOpenChange={handleClose}>
-      <DrawerContent className="bg-card border-border/60 focus:outline-none max-h-[92dvh]">
-        <div className="mx-auto w-full max-w-md pb-6">
+      <DrawerContent
+        className="bg-card border-border/60 focus:outline-none"
+        style={{ maxHeight: isPesapalIframe ? "96dvh" : "88dvh" }}
+      >
+        <div className="mx-auto w-full max-w-lg flex flex-col h-full">
 
-          {/* ── Enter amount + phone ── */}
+          {/* ── Amount selection step ── */}
           {step === "amount" && (
             <>
-              <DrawerHeader className="pt-2 pb-4 px-5">
+              <DrawerHeader className="pt-2 pb-4 px-5 shrink-0">
                 <DrawerTitle className="flex items-center gap-2 text-white">
-                  <ArrowDownToLine className="w-5 h-5 text-primary" /> Deposit via M-Pesa
+                  <ArrowDownToLine className="w-5 h-5 text-primary" /> Deposit Funds
                 </DrawerTitle>
                 <DrawerDescription>
-                  Enter the amount and your M-Pesa number. You'll get a PIN prompt on your phone.
+                  Enter the amount to deposit via M-Pesa or card.
                 </DrawerDescription>
               </DrawerHeader>
 
-              <div className="px-5 space-y-4">
+              <div className="px-5 space-y-4 overflow-y-auto flex-1">
                 {/* Amount */}
                 <div>
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 block">
@@ -339,28 +348,24 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
                   </div>
                 </div>
 
-                {/* Phone */}
+                {/* Phone (optional — Pesapal will also ask) */}
                 <div>
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 block">
-                    M-Pesa Phone Number
+                    M-Pesa Phone <span className="text-muted-foreground/60 font-normal normal-case">(optional — pre-fills Pesapal form)</span>
                   </label>
                   <div className="relative">
                     <Smartphone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
                       type="tel"
                       inputMode="tel"
-                      placeholder="07XX XXX XXX or +2547XX..."
+                      placeholder="07XX XXX XXX"
                       value={displayPhone}
                       onChange={e => setPhone(e.target.value)}
                       className="pl-9 h-12 bg-background border-border text-white"
                     />
                   </div>
-                  <p className="text-[11px] text-muted-foreground mt-1.5">
-                    You'll receive a PIN prompt on this number to confirm the deposit.
-                  </p>
                 </div>
 
-                {/* Summary */}
                 {parsedAmount >= minDeposit && (
                   <div className="bg-primary/8 border border-primary/25 rounded-xl px-4 py-3 flex items-center justify-between">
                     <span className="text-sm text-muted-foreground">You will deposit</span>
@@ -369,15 +374,15 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
                 )}
               </div>
 
-              <DrawerFooter className="px-5 pt-4">
+              <DrawerFooter className="px-5 pt-4 pb-6 shrink-0">
                 <Button
-                  className="w-full h-13 text-base font-bold bg-primary text-primary-foreground hover:bg-primary/90 shadow-[0_0_20px_rgba(0,230,92,0.3)]"
+                  className="w-full h-12 text-base font-bold bg-primary text-primary-foreground hover:bg-primary/90 shadow-[0_0_20px_rgba(0,230,92,0.3)]"
                   onClick={initiateDeposit}
                   disabled={parsedAmount < minDeposit || sending}
                 >
                   {sending
                     ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Connecting...</>
-                    : <><Smartphone className="w-4 h-4 mr-2" /> Send M-Pesa Prompt</>
+                    : <><ArrowDownToLine className="w-4 h-4 mr-2" /> Proceed</>
                   }
                 </Button>
                 <Button variant="ghost" className="text-muted-foreground" onClick={() => handleClose(false)}>
@@ -388,9 +393,9 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
           )}
 
           {/* ── Daraja STK waiting ── */}
-          {(step === "daraja-waiting" || step === "pesapal-stk-waiting") && (
+          {step === "daraja-waiting" && (
             <>
-              <DrawerHeader className="pt-2 pb-2 px-5">
+              <DrawerHeader className="pt-2 pb-2 px-5 shrink-0">
                 <DrawerTitle className="flex items-center gap-2 text-white">
                   <Loader2 className="w-5 h-5 animate-spin text-primary" /> Check Your Phone
                 </DrawerTitle>
@@ -398,7 +403,7 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
                   An M-Pesa PIN prompt has been sent. Enter your PIN to complete.
                 </DrawerDescription>
               </DrawerHeader>
-              <div className="px-5 py-6 flex flex-col items-center gap-5">
+              <div className="px-5 py-6 flex flex-col items-center gap-5 flex-1">
                 <div className="relative w-24 h-24">
                   <div className="absolute inset-0 rounded-full bg-primary/20 animate-ping" />
                   <div className="relative w-24 h-24 rounded-full bg-primary/15 border-2 border-primary/40 flex items-center justify-center">
@@ -412,9 +417,6 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
                     <strong className="text-white">{displayPhone}</strong>
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">Enter your M-Pesa PIN on your phone.</p>
-                  {gateway === "pesapal" && (
-                    <p className="text-[10px] text-blue-400/80 mt-1">via Pesapal · Polling for confirmation...</p>
-                  )}
                 </div>
                 <div className="flex gap-1 mt-2">
                   {[0, 1, 2].map((i) => (
@@ -422,7 +424,7 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
                   ))}
                 </div>
               </div>
-              <DrawerFooter className="px-5 pt-0">
+              <DrawerFooter className="px-5 pt-0 pb-6 shrink-0">
                 <Button variant="ghost" className="text-muted-foreground text-sm" onClick={() => handleClose(false)}>
                   Cancel payment
                 </Button>
@@ -430,15 +432,77 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
             </>
           )}
 
+          {/* ── Pesapal embedded iframe ── */}
+          {step === "pesapal-iframe" && (
+            <>
+              {/* Compact header */}
+              <div className="flex items-center justify-between px-4 py-3 border-b border-border/50 shrink-0">
+                <div className="flex items-center gap-2">
+                  <Globe className="w-4 h-4 text-blue-400" />
+                  <span className="text-sm font-bold text-white">Secure Payment</span>
+                  <span className="text-[10px] bg-blue-500/15 border border-blue-500/30 text-blue-400 px-2 py-0.5 rounded-full font-semibold">
+                    Pesapal
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-display font-black text-primary">{formatCurrency(parsedAmount)}</span>
+                  <button
+                    onClick={() => handleClose(false)}
+                    className="text-muted-foreground hover:text-white transition-colors ml-2 text-xs font-semibold"
+                  >
+                    ✕ Close
+                  </button>
+                </div>
+              </div>
+
+              {/* Iframe container */}
+              <div className="flex-1 relative bg-white overflow-hidden">
+                {iframeLoading && (
+                  <div className="absolute inset-0 bg-card flex flex-col items-center justify-center gap-4 z-10">
+                    <div className="w-12 h-12 rounded-full border-2 border-blue-400/30 border-t-blue-400 animate-spin" />
+                    <div className="text-center">
+                      <p className="text-sm font-semibold text-white">Loading secure payment...</p>
+                      <p className="text-xs text-muted-foreground mt-1">Powered by Pesapal</p>
+                    </div>
+                  </div>
+                )}
+                {pesapalUrl && (
+                  <iframe
+                    src={pesapalUrl}
+                    className="w-full h-full border-0"
+                    style={{ minHeight: "480px" }}
+                    title="Pesapal Payment"
+                    allow="payment *"
+                    onLoad={() => setIframeLoading(false)}
+                    sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation-by-user-activation"
+                  />
+                )}
+              </div>
+
+              {/* Bottom polling indicator */}
+              <div className="px-4 py-2.5 border-t border-border/40 bg-card/80 shrink-0 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="flex gap-1">
+                    {[0, 1, 2].map((i) => (
+                      <div key={i} className="w-1.5 h-1.5 rounded-full bg-blue-400/60 animate-bounce" style={{ animationDelay: `${i * 0.2}s` }} />
+                    ))}
+                  </div>
+                  <span className="text-[11px] text-muted-foreground">Watching for payment confirmation...</span>
+                </div>
+                <span className="text-[10px] text-muted-foreground/60">🔒 Secure</span>
+              </div>
+            </>
+          )}
+
           {/* ── Success ── */}
           {step === "success" && (
             <>
-              <DrawerHeader className="pt-2 pb-2 px-5">
+              <DrawerHeader className="pt-2 pb-2 px-5 shrink-0">
                 <DrawerTitle className="flex items-center gap-2 text-primary">
                   <CheckCircle2 className="w-5 h-5" /> Deposit Confirmed!
                 </DrawerTitle>
               </DrawerHeader>
-              <div className="px-5 py-6 flex flex-col items-center gap-4">
+              <div className="px-5 py-6 flex flex-col items-center gap-4 flex-1">
                 <div className="w-24 h-24 rounded-full bg-primary/15 border-2 border-primary flex items-center justify-center shadow-[0_0_30px_rgba(0,230,92,0.3)]">
                   <CheckCircle2 className="w-12 h-12 text-primary" />
                 </div>
@@ -448,7 +512,7 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
                   {gateway === "pesapal" && <p className="text-[11px] text-blue-400 mt-1">via Pesapal</p>}
                 </div>
               </div>
-              <DrawerFooter className="px-5 pt-0">
+              <DrawerFooter className="px-5 pt-0 pb-6 shrink-0">
                 <Button className="w-full font-bold bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => handleClose(false)}>
                   Done
                 </Button>
@@ -459,22 +523,24 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
           {/* ── Failed ── */}
           {step === "failed" && (
             <>
-              <DrawerHeader className="pt-2 pb-2 px-5">
+              <DrawerHeader className="pt-2 pb-2 px-5 shrink-0">
                 <DrawerTitle className="flex items-center gap-2 text-destructive">
                   <XCircle className="w-5 h-5" /> Payment Not Completed
                 </DrawerTitle>
                 <DrawerDescription>
-                  The M-Pesa payment was not confirmed. No funds were deducted from your account.
+                  The payment was not confirmed. No funds were deducted.
                 </DrawerDescription>
               </DrawerHeader>
-              <div className="px-5 py-4 flex flex-col items-center gap-4">
+              <div className="px-5 py-4 flex flex-col items-center gap-4 flex-1">
                 <div className="w-20 h-20 rounded-full bg-destructive/10 border border-destructive/30 flex items-center justify-center">
                   <XCircle className="w-10 h-10 text-destructive" />
                 </div>
               </div>
-              <DrawerFooter className="px-5 pt-0 flex-row gap-2">
+              <DrawerFooter className="px-5 pt-0 pb-6 shrink-0 flex-row gap-2">
                 <Button variant="outline" className="flex-1" onClick={() => handleClose(false)}>Close</Button>
-                <Button className="flex-1 bg-primary text-primary-foreground" onClick={() => setStep("amount")}>Try Again</Button>
+                <Button className="flex-1 bg-primary text-primary-foreground" onClick={() => { setStep("amount"); setIframeLoading(true); }}>
+                  Try Again
+                </Button>
               </DrawerFooter>
             </>
           )}
@@ -513,7 +579,7 @@ function WithdrawDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange}>
-      <DrawerContent className="bg-card border-border/60 focus:outline-none max-h-[92dvh]">
+      <DrawerContent className="bg-card border-border/60 focus:outline-none max-h-[88dvh]">
         <div className="mx-auto w-full max-w-md pb-6">
           <DrawerHeader className="pt-2 pb-4 px-5">
             <DrawerTitle className="flex items-center gap-2 text-white">

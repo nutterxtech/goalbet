@@ -392,7 +392,6 @@ router.post("/deposit/initiate", async (req: AuthRequest, res) => {
         phone: depositPhone,
         firstName: user.username,
         lastName: "User",
-        paymentMethod: depositPhone ? "MPESA" : undefined,
       }
     );
 
@@ -403,10 +402,8 @@ router.post("/deposit/initiate", async (req: AuthRequest, res) => {
     res.json({
       success: true,
       method: "pesapal",
-      message: depositPhone
-        ? "M-Pesa prompt sent to your phone. Enter your PIN to confirm."
-        : "Complete your payment via Pesapal.",
-      stkPush: !!depositPhone,
+      message: "Complete your payment in the Pesapal panel below.",
+      redirectUrl: orderResult.redirectUrl,
       orderTrackingId: orderResult.orderTrackingId,
       transactionId: tx.id,
     });
