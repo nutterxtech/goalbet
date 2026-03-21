@@ -1,17 +1,15 @@
 import express, { type Express } from "express";
 import cors from "cors";
 import path from "path";
-import { fileURLToPath } from "url";
 import router from "./routes/index.js";
 import { connectDB } from "./lib/mongodb.js";
 import { User } from "./models/User.js";
 
 const app: Express = express();
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// In production the frontend is built alongside the backend.
-// Resolve the path whether we're running from src/ (dev) or dist/ (prod).
-const FRONTEND_DIST = path.resolve(__dirname, "../../football-betting/dist/public");
+// process.cwd() is always the monorepo root on Render (and in local dev).
+// import.meta.url is undefined in bundled CJS, so we avoid it here.
+const FRONTEND_DIST = path.resolve(process.cwd(), "artifacts/football-betting/dist/public");
 
 async function seedAdminAccount() {
   try {
