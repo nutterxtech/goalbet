@@ -386,7 +386,7 @@ router.post("/deposit/initiate", async (req: AuthRequest, res) => {
         amount,
         currency: "KES",
         description: "GoalBet Deposit",
-        callbackUrl: config.pesapalCallbackUrl || `${req.headers.origin}/transactions`,
+        callbackUrl: config.pesapalCallbackUrl || `${req.headers.origin}/deposit-callback`,
         ipnId: config.pesapalIpnId,
         email: user.email,
         phone: depositPhone,

@@ -182,7 +182,7 @@ export default function TransactionsPage() {
   );
 }
 
-type DepositStep = "amount" | "daraja-waiting" | "pesapal-overlay" | "success" | "failed";
+type DepositStep = "amount" | "daraja-waiting" | "pesapal-iframe" | "success" | "failed";
 
 function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const config = usePublicConfig();
@@ -195,13 +195,11 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
   const [transactionId, setTransactionId] = useState<string | null>(null);
   const [orderTrackingId, setOrderTrackingId] = useState<string | null>(null);
   const [pesapalUrl, setPesapalUrl] = useState<string | null>(null);
-  const [popupClosed, setPopupClosed] = useState(false);
+  const [iframeLoaded, setIframeLoaded] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const popupRef = useRef<Window | null>(null);
-  const popupWatchRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const parsedAmount = parseFloat(amount) || 0;
   const displayPhone = phone || user?.phone || "";
@@ -216,26 +214,37 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
     queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
   }
 
-  function openPesapalPopup(url: string) {
-    const w = 480, h = 680;
-    const left = Math.max(0, (window.screen.width - w) / 2);
-    const top = Math.max(0, (window.screen.height - h) / 2);
-    const popup = window.open(
-      url,
-      "PesapalPayment",
-      `width=${w},height=${h},left=${left},top=${top},menubar=no,toolbar=no,location=no,status=no,scrollbars=yes,resizable=yes`
-    );
-    popupRef.current = popup;
-    setPopupClosed(false);
-    // Watch for popup being closed
-    if (popupWatchRef.current) clearInterval(popupWatchRef.current);
-    popupWatchRef.current = setInterval(() => {
-      if (popupRef.current?.closed) {
-        clearInterval(popupWatchRef.current!);
-        setPopupClosed(true);
+  // Listen for postMessage from the /deposit-callback page loaded inside the iframe
+  useEffect(() => {
+    if (step !== "pesapal-iframe") return;
+    function onMessage(e: MessageEvent) {
+      if (e.origin !== window.location.origin) return;
+      if (e.data?.type === "pesapal-callback") {
+        if (pollRef.current) clearInterval(pollRef.current);
+        setStep("success");
+        refreshBalances();
       }
-    }, 800);
-  }
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [step]);
+
+  // Poll Pesapal status as a backup in case postMessage doesn't fire
+  useEffect(() => {
+    if (step !== "pesapal-iframe" || !orderTrackingId) return;
+    pollRef.current = setInterval(async () => {
+      try {
+        const token = localStorage.getItem("goalbet_token");
+        const res = await fetch(`${API_BASE}/user/deposit/pesapal/status/${orderTrackingId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (data.status === "completed") { clearInterval(pollRef.current!); setStep("success"); refreshBalances(); }
+        else if (data.status === "failed") { clearInterval(pollRef.current!); setStep("failed"); }
+      } catch {}
+    }, 4000);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [step, orderTrackingId]);
 
   // Poll for Daraja status
   useEffect(() => {
@@ -253,31 +262,6 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
     }, 3000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [step, transactionId]);
-
-  // Poll for Pesapal status while overlay is showing
-  useEffect(() => {
-    if (step !== "pesapal-overlay" || !orderTrackingId) return;
-    pollRef.current = setInterval(async () => {
-      try {
-        const token = localStorage.getItem("goalbet_token");
-        const res = await fetch(`${API_BASE}/user/deposit/pesapal/status/${orderTrackingId}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await res.json();
-        if (data.status === "completed") {
-          clearInterval(pollRef.current!);
-          popupRef.current?.close();
-          setStep("success");
-          refreshBalances();
-        } else if (data.status === "failed") {
-          clearInterval(pollRef.current!);
-          popupRef.current?.close();
-          setStep("failed");
-        }
-      } catch {}
-    }, 3000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [step, orderTrackingId]);
 
   async function initiateDeposit() {
     if (parsedAmount < minDeposit) return;
@@ -300,8 +284,8 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
       } else if (data.method === "pesapal") {
         setOrderTrackingId(data.orderTrackingId);
         setPesapalUrl(data.redirectUrl);
-        setStep("pesapal-overlay");
-        openPesapalPopup(data.redirectUrl);
+        setIframeLoaded(false);
+        setStep("pesapal-iframe");
       }
     } catch (err: any) {
       toast({ title: "Deposit Error", description: err.message, variant: "destructive" });
@@ -313,14 +297,12 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
   function handleClose(v: boolean) {
     if (!v) {
       if (pollRef.current) clearInterval(pollRef.current);
-      if (popupWatchRef.current) clearInterval(popupWatchRef.current);
-      popupRef.current?.close();
       setStep("amount");
       setAmount("100");
       setTransactionId(null);
       setOrderTrackingId(null);
       setPesapalUrl(null);
-      setPopupClosed(false);
+      setIframeLoaded(false);
     }
     onOpenChange(v);
   }
@@ -328,13 +310,13 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
   const quickAmounts = [minDeposit, minDeposit * 2, minDeposit * 5, minDeposit * 10]
     .filter((v, i, a) => a.indexOf(v) === i);
 
-  const isPesapalOverlay = step === "pesapal-overlay";
+  const isPesapalIframe = step === "pesapal-iframe";
 
   return (
-    <Drawer open={open} onOpenChange={handleClose} dismissible={!isPesapalOverlay}>
+    <Drawer open={open} onOpenChange={handleClose} dismissible={!isPesapalIframe}>
       <DrawerContent
         className="bg-card border-border/60 focus:outline-none"
-        style={{ maxHeight: "88dvh" }}
+        style={{ maxHeight: isPesapalIframe ? "96dvh" : "88dvh" }}
       >
         <div className="mx-auto w-full max-w-lg flex flex-col h-full">
 
@@ -465,82 +447,51 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
             </>
           )}
 
-          {/* ── Pesapal popup overlay ── */}
-          {step === "pesapal-overlay" && (
+          {/* ── Pesapal embedded iframe ── */}
+          {step === "pesapal-iframe" && (
             <>
-              <DrawerHeader className="pt-2 pb-2 px-5 shrink-0">
-                <DrawerTitle className="flex items-center gap-2 text-white">
-                  <Globe className="w-5 h-5 text-blue-400" /> Pesapal Payment
-                </DrawerTitle>
-                <DrawerDescription>
-                  Complete your payment in the Pesapal window that just opened.
-                </DrawerDescription>
-              </DrawerHeader>
-
-              <div className="px-5 flex-1 flex flex-col items-center justify-center gap-6 py-6">
-                {/* Amount badge */}
-                <div className="bg-primary/10 border border-primary/30 rounded-2xl px-6 py-3 text-center">
-                  <p className="text-xs text-muted-foreground mb-1">Depositing</p>
-                  <p className="text-3xl font-display font-black text-primary">{formatCurrency(parsedAmount)}</p>
+              {/* Header bar */}
+              <div className="flex items-center justify-between px-4 py-3 border-b border-border/50 shrink-0">
+                <div className="flex items-center gap-2">
+                  <Globe className="w-4 h-4 text-blue-400" />
+                  <span className="text-sm font-bold text-white">Secure Payment</span>
+                  <span className="text-[10px] bg-blue-500/15 border border-blue-500/30 text-blue-400 px-2 py-0.5 rounded-full font-semibold">Pesapal</span>
                 </div>
-
-                {/* Status icon */}
-                {!popupClosed ? (
-                  <div className="flex flex-col items-center gap-3">
-                    <div className="relative w-20 h-20">
-                      <div className="absolute inset-0 rounded-full bg-blue-500/15 animate-ping" style={{ animationDuration: "2s" }} />
-                      <div className="relative w-20 h-20 rounded-full bg-blue-500/10 border-2 border-blue-500/40 flex items-center justify-center">
-                        <Globe className="w-9 h-9 text-blue-400" />
-                      </div>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-base font-bold text-white">Pesapal window is open</p>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Enter your details and pay in that window.<br />Your balance updates here the moment it's done.
-                      </p>
-                    </div>
-                    <div className="flex gap-1.5 mt-1">
-                      {[0, 1, 2].map((i) => (
-                        <div key={i} className="w-2 h-2 rounded-full bg-blue-400/60 animate-bounce" style={{ animationDelay: `${i * 0.22}s` }} />
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center gap-3">
-                    <div className="w-20 h-20 rounded-full bg-amber-500/10 border-2 border-amber-500/40 flex items-center justify-center">
-                      <Globe className="w-9 h-9 text-amber-400" />
-                    </div>
-                    <div className="text-center">
-                      <p className="text-base font-bold text-white">Payment window was closed</p>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Did you complete the payment? If yes, your balance will update shortly.<br />
-                        If not, reopen the window to continue.
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Polling status */}
-                <div className="w-full bg-secondary/40 border border-border/40 rounded-xl px-4 py-3 flex items-center gap-3">
-                  <Loader2 className="w-4 h-4 text-muted-foreground animate-spin shrink-0" />
-                  <span className="text-xs text-muted-foreground">Watching for payment confirmation…</span>
-                  <span className="ml-auto text-[10px] text-muted-foreground/50">🔒 Secure</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-display font-black text-primary">{formatCurrency(parsedAmount)}</span>
+                  <button onClick={() => handleClose(false)} className="text-muted-foreground hover:text-white text-xs font-semibold transition-colors">✕ Close</button>
                 </div>
               </div>
 
-              <DrawerFooter className="px-5 pt-0 pb-6 shrink-0 flex-col gap-2">
-                {/* Reopen button — shown whenever popup might be closed or blocked */}
-                <Button
-                  className="w-full h-11 font-bold bg-blue-600 hover:bg-blue-700 text-white"
-                  onClick={() => pesapalUrl && openPesapalPopup(pesapalUrl)}
-                >
-                  <Globe className="w-4 h-4 mr-2" />
-                  {popupClosed ? "Reopen Payment Window" : "Open Payment Window Again"}
-                </Button>
-                <Button variant="ghost" className="text-muted-foreground text-sm" onClick={() => handleClose(false)}>
-                  Cancel payment
-                </Button>
-              </DrawerFooter>
+              {/* Iframe area */}
+              <div className="flex-1 relative bg-white overflow-hidden" style={{ minHeight: "480px" }}>
+                {!iframeLoaded && (
+                  <div className="absolute inset-0 bg-card flex flex-col items-center justify-center gap-3 z-10">
+                    <div className="w-10 h-10 rounded-full border-2 border-blue-400/30 border-t-blue-400 animate-spin" />
+                    <p className="text-sm text-white font-semibold">Loading Pesapal…</p>
+                  </div>
+                )}
+                {pesapalUrl && (
+                  <iframe
+                    key={pesapalUrl}
+                    src={pesapalUrl}
+                    className="w-full h-full border-0"
+                    title="Pesapal Payment"
+                    allow="payment *"
+                    onLoad={() => setIframeLoaded(true)}
+                    sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+                  />
+                )}
+              </div>
+
+              {/* Status bar */}
+              <div className="px-4 py-2 border-t border-border/40 bg-card/80 shrink-0 flex items-center gap-2">
+                <div className="flex gap-1">
+                  {[0,1,2].map(i => <div key={i} className="w-1.5 h-1.5 rounded-full bg-blue-400/60 animate-bounce" style={{ animationDelay: `${i*0.2}s` }} />)}
+                </div>
+                <span className="text-[11px] text-muted-foreground">Watching for payment confirmation…</span>
+                <span className="ml-auto text-[10px] text-muted-foreground/50">🔒 Secure</span>
+              </div>
             </>
           )}
 

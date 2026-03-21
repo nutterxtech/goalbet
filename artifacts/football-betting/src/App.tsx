@@ -18,6 +18,7 @@ import TransactionsPage from "@/pages/dashboard/transactions";
 import LeaderboardPage from "@/pages/dashboard/leaderboard";
 import NotificationsPage from "@/pages/dashboard/notifications";
 import LuckyWheelPage from "@/pages/dashboard/lucky-wheel";
+import DepositCallbackPage from "@/pages/deposit-callback";
 
 // Admin Pages
 import AdminOverview from "@/pages/admin/overview";
@@ -66,6 +67,7 @@ function Router() {
         <Route path="/dashboard/notifications" component={NotificationsPage} />
         <Route path="/dashboard/leaderboard" component={LeaderboardPage} />
         <Route path="/dashboard/lucky-wheel" component={LuckyWheelPage} />
+        <Route path="/deposit-callback" component={DepositCallbackPage} />
 
         {/* Admin Routes */}
         <Route path="/admin" component={AdminOverview} />
