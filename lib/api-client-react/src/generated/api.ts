@@ -94,11 +94,11 @@ export const getHealthCheckQueryOptions = <
   TData = Awaited<ReturnType<typeof healthCheck>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: (Omit<UseQueryOptions<
     Awaited<ReturnType<typeof healthCheck>>,
     TError,
     TData
-  >;
+  >, 'queryKey'> & { queryKey?: QueryKey });
   request?: SecondParameter<typeof customFetch>;
 }) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
@@ -129,11 +129,11 @@ export function useHealthCheck<
   TData = Awaited<ReturnType<typeof healthCheck>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: (Omit<UseQueryOptions<
     Awaited<ReturnType<typeof healthCheck>>,
     TError,
     TData
-  >;
+  >, 'queryKey'> & { queryKey?: QueryKey });
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getHealthCheckQueryOptions(options);
@@ -339,7 +339,7 @@ export const getGetMeQueryOptions = <
   TData = Awaited<ReturnType<typeof getMe>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<Awaited<ReturnType<typeof getMe>>, TError, TData>;
+  query?: (Omit<UseQueryOptions<Awaited<ReturnType<typeof getMe>>, TError, TData>, 'queryKey'> & { queryKey?: QueryKey });
   request?: SecondParameter<typeof customFetch>;
 }) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
@@ -368,7 +368,7 @@ export function useGetMe<
   TData = Awaited<ReturnType<typeof getMe>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<Awaited<ReturnType<typeof getMe>>, TError, TData>;
+  query?: (Omit<UseQueryOptions<Awaited<ReturnType<typeof getMe>>, TError, TData>, 'queryKey'> & { queryKey?: QueryKey });
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetMeQueryOptions(options);
@@ -404,11 +404,11 @@ export const getGetBalanceQueryOptions = <
   TData = Awaited<ReturnType<typeof getBalance>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: (Omit<UseQueryOptions<
     Awaited<ReturnType<typeof getBalance>>,
     TError,
     TData
-  >;
+  >, 'queryKey'> & { queryKey?: QueryKey });
   request?: SecondParameter<typeof customFetch>;
 }) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
@@ -439,11 +439,11 @@ export function useGetBalance<
   TData = Awaited<ReturnType<typeof getBalance>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: (Omit<UseQueryOptions<
     Awaited<ReturnType<typeof getBalance>>,
     TError,
     TData
-  >;
+  >, 'queryKey'> & { queryKey?: QueryKey });
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetBalanceQueryOptions(options);
@@ -666,11 +666,11 @@ export const getGetTransactionsQueryOptions = <
 >(
   params?: GetTransactionsParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: (Omit<UseQueryOptions<
       Awaited<ReturnType<typeof getTransactions>>,
       TError,
       TData
-    >;
+    >, 'queryKey'> & { queryKey?: QueryKey });
     request?: SecondParameter<typeof customFetch>;
   },
 ) => {
@@ -704,11 +704,11 @@ export function useGetTransactions<
 >(
   params?: GetTransactionsParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: (Omit<UseQueryOptions<
       Awaited<ReturnType<typeof getTransactions>>,
       TError,
       TData
-    >;
+    >, 'queryKey'> & { queryKey?: QueryKey });
     request?: SecondParameter<typeof customFetch>;
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
@@ -760,11 +760,11 @@ export const getGetUserBetsQueryOptions = <
 >(
   params?: GetUserBetsParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: (Omit<UseQueryOptions<
       Awaited<ReturnType<typeof getUserBets>>,
       TError,
       TData
-    >;
+    >, 'queryKey'> & { queryKey?: QueryKey });
     request?: SecondParameter<typeof customFetch>;
   },
 ) => {
@@ -798,11 +798,11 @@ export function useGetUserBets<
 >(
   params?: GetUserBetsParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: (Omit<UseQueryOptions<
       Awaited<ReturnType<typeof getUserBets>>,
       TError,
       TData
-    >;
+    >, 'queryKey'> & { queryKey?: QueryKey });
     request?: SecondParameter<typeof customFetch>;
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
@@ -839,11 +839,11 @@ export const getGetNotificationsQueryOptions = <
   TData = Awaited<ReturnType<typeof getNotifications>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: (Omit<UseQueryOptions<
     Awaited<ReturnType<typeof getNotifications>>,
     TError,
     TData
-  >;
+  >, 'queryKey'> & { queryKey?: QueryKey });
   request?: SecondParameter<typeof customFetch>;
 }) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
@@ -874,11 +874,11 @@ export function useGetNotifications<
   TData = Awaited<ReturnType<typeof getNotifications>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: (Omit<UseQueryOptions<
     Awaited<ReturnType<typeof getNotifications>>,
     TError,
     TData
-  >;
+  >, 'queryKey'> & { queryKey?: QueryKey });
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetNotificationsQueryOptions(options);
@@ -1010,11 +1010,11 @@ export const getGetMatchesQueryOptions = <
 >(
   params?: GetMatchesParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: (Omit<UseQueryOptions<
       Awaited<ReturnType<typeof getMatches>>,
       TError,
       TData
-    >;
+    >, 'queryKey'> & { queryKey?: QueryKey });
     request?: SecondParameter<typeof customFetch>;
   },
 ) => {
@@ -1048,11 +1048,11 @@ export function useGetMatches<
 >(
   params?: GetMatchesParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: (Omit<UseQueryOptions<
       Awaited<ReturnType<typeof getMatches>>,
       TError,
       TData
-    >;
+    >, 'queryKey'> & { queryKey?: QueryKey });
     request?: SecondParameter<typeof customFetch>;
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
@@ -1092,11 +1092,11 @@ export const getGetMatchQueryOptions = <
 >(
   id: string,
   options?: {
-    query?: UseQueryOptions<
+    query?: (Omit<UseQueryOptions<
       Awaited<ReturnType<typeof getMatch>>,
       TError,
       TData
-    >;
+    >, 'queryKey'> & { queryKey?: QueryKey });
     request?: SecondParameter<typeof customFetch>;
   },
 ) => {
@@ -1133,11 +1133,11 @@ export function useGetMatch<
 >(
   id: string,
   options?: {
-    query?: UseQueryOptions<
+    query?: (Omit<UseQueryOptions<
       Awaited<ReturnType<typeof getMatch>>,
       TError,
       TData
-    >;
+    >, 'queryKey'> & { queryKey?: QueryKey });
     request?: SecondParameter<typeof customFetch>;
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
@@ -1361,11 +1361,11 @@ export const getGetUserSlipsQueryOptions = <
 >(
   params?: GetUserSlipsParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: (Omit<UseQueryOptions<
       Awaited<ReturnType<typeof getUserSlips>>,
       TError,
       TData
-    >;
+    >, 'queryKey'> & { queryKey?: QueryKey });
     request?: SecondParameter<typeof customFetch>;
   },
 ) => {
@@ -1399,11 +1399,11 @@ export function useGetUserSlips<
 >(
   params?: GetUserSlipsParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: (Omit<UseQueryOptions<
       Awaited<ReturnType<typeof getUserSlips>>,
       TError,
       TData
-    >;
+    >, 'queryKey'> & { queryKey?: QueryKey });
     request?: SecondParameter<typeof customFetch>;
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
@@ -1443,7 +1443,7 @@ export const getGetSlipQueryOptions = <
 >(
   slipId: string,
   options?: {
-    query?: UseQueryOptions<Awaited<ReturnType<typeof getSlip>>, TError, TData>;
+    query?: (Omit<UseQueryOptions<Awaited<ReturnType<typeof getSlip>>, TError, TData>, 'queryKey'> & { queryKey?: QueryKey });
     request?: SecondParameter<typeof customFetch>;
   },
 ) => {
@@ -1480,7 +1480,7 @@ export function useGetSlip<
 >(
   slipId: string,
   options?: {
-    query?: UseQueryOptions<Awaited<ReturnType<typeof getSlip>>, TError, TData>;
+    query?: (Omit<UseQueryOptions<Awaited<ReturnType<typeof getSlip>>, TError, TData>, 'queryKey'> & { queryKey?: QueryKey });
     request?: SecondParameter<typeof customFetch>;
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
@@ -1517,11 +1517,11 @@ export const getGetLeaderboardQueryOptions = <
   TData = Awaited<ReturnType<typeof getLeaderboard>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: (Omit<UseQueryOptions<
     Awaited<ReturnType<typeof getLeaderboard>>,
     TError,
     TData
-  >;
+  >, 'queryKey'> & { queryKey?: QueryKey });
   request?: SecondParameter<typeof customFetch>;
 }) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
@@ -1552,11 +1552,11 @@ export function useGetLeaderboard<
   TData = Awaited<ReturnType<typeof getLeaderboard>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: (Omit<UseQueryOptions<
     Awaited<ReturnType<typeof getLeaderboard>>,
     TError,
     TData
-  >;
+  >, 'queryKey'> & { queryKey?: QueryKey });
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetLeaderboardQueryOptions(options);
@@ -1607,11 +1607,11 @@ export const getAdminGetUsersQueryOptions = <
 >(
   params?: AdminGetUsersParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: (Omit<UseQueryOptions<
       Awaited<ReturnType<typeof adminGetUsers>>,
       TError,
       TData
-    >;
+    >, 'queryKey'> & { queryKey?: QueryKey });
     request?: SecondParameter<typeof customFetch>;
   },
 ) => {
@@ -1645,11 +1645,11 @@ export function useAdminGetUsers<
 >(
   params?: AdminGetUsersParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: (Omit<UseQueryOptions<
       Awaited<ReturnType<typeof adminGetUsers>>,
       TError,
       TData
-    >;
+    >, 'queryKey'> & { queryKey?: QueryKey });
     request?: SecondParameter<typeof customFetch>;
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
@@ -1689,11 +1689,11 @@ export const getAdminGetUserQueryOptions = <
 >(
   id: string,
   options?: {
-    query?: UseQueryOptions<
+    query?: (Omit<UseQueryOptions<
       Awaited<ReturnType<typeof adminGetUser>>,
       TError,
       TData
-    >;
+    >, 'queryKey'> & { queryKey?: QueryKey });
     request?: SecondParameter<typeof customFetch>;
   },
 ) => {
@@ -1732,11 +1732,11 @@ export function useAdminGetUser<
 >(
   id: string,
   options?: {
-    query?: UseQueryOptions<
+    query?: (Omit<UseQueryOptions<
       Awaited<ReturnType<typeof adminGetUser>>,
       TError,
       TData
-    >;
+    >, 'queryKey'> & { queryKey?: QueryKey });
     request?: SecondParameter<typeof customFetch>;
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
@@ -2398,11 +2398,11 @@ export const getAdminGetWithdrawalsQueryOptions = <
 >(
   params?: AdminGetWithdrawalsParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: (Omit<UseQueryOptions<
       Awaited<ReturnType<typeof adminGetWithdrawals>>,
       TError,
       TData
-    >;
+    >, 'queryKey'> & { queryKey?: QueryKey });
     request?: SecondParameter<typeof customFetch>;
   },
 ) => {
@@ -2438,11 +2438,11 @@ export function useAdminGetWithdrawals<
 >(
   params?: AdminGetWithdrawalsParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: (Omit<UseQueryOptions<
       Awaited<ReturnType<typeof adminGetWithdrawals>>,
       TError,
       TData
-    >;
+    >, 'queryKey'> & { queryKey?: QueryKey });
     request?: SecondParameter<typeof customFetch>;
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
@@ -2567,11 +2567,11 @@ export const getAdminGetStatsQueryOptions = <
   TData = Awaited<ReturnType<typeof adminGetStats>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: (Omit<UseQueryOptions<
     Awaited<ReturnType<typeof adminGetStats>>,
     TError,
     TData
-  >;
+  >, 'queryKey'> & { queryKey?: QueryKey });
   request?: SecondParameter<typeof customFetch>;
 }) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
@@ -2602,11 +2602,11 @@ export function useAdminGetStats<
   TData = Awaited<ReturnType<typeof adminGetStats>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: (Omit<UseQueryOptions<
     Awaited<ReturnType<typeof adminGetStats>>,
     TError,
     TData
-  >;
+  >, 'queryKey'> & { queryKey?: QueryKey });
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getAdminGetStatsQueryOptions(options);
@@ -2657,11 +2657,11 @@ export const getAdminGetBetsQueryOptions = <
 >(
   params?: AdminGetBetsParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: (Omit<UseQueryOptions<
       Awaited<ReturnType<typeof adminGetBets>>,
       TError,
       TData
-    >;
+    >, 'queryKey'> & { queryKey?: QueryKey });
     request?: SecondParameter<typeof customFetch>;
   },
 ) => {
@@ -2695,11 +2695,11 @@ export function useAdminGetBets<
 >(
   params?: AdminGetBetsParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: (Omit<UseQueryOptions<
       Awaited<ReturnType<typeof adminGetBets>>,
       TError,
       TData
-    >;
+    >, 'queryKey'> & { queryKey?: QueryKey });
     request?: SecondParameter<typeof customFetch>;
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
@@ -2751,11 +2751,11 @@ export const getAdminGetLogsQueryOptions = <
 >(
   params?: AdminGetLogsParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: (Omit<UseQueryOptions<
       Awaited<ReturnType<typeof adminGetLogs>>,
       TError,
       TData
-    >;
+    >, 'queryKey'> & { queryKey?: QueryKey });
     request?: SecondParameter<typeof customFetch>;
   },
 ) => {
@@ -2789,11 +2789,11 @@ export function useAdminGetLogs<
 >(
   params?: AdminGetLogsParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: (Omit<UseQueryOptions<
       Awaited<ReturnType<typeof adminGetLogs>>,
       TError,
       TData
-    >;
+    >, 'queryKey'> & { queryKey?: QueryKey });
     request?: SecondParameter<typeof customFetch>;
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
@@ -2830,11 +2830,11 @@ export const getAdminGetConfigQueryOptions = <
   TData = Awaited<ReturnType<typeof adminGetConfig>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: (Omit<UseQueryOptions<
     Awaited<ReturnType<typeof adminGetConfig>>,
     TError,
     TData
-  >;
+  >, 'queryKey'> & { queryKey?: QueryKey });
   request?: SecondParameter<typeof customFetch>;
 }) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
@@ -2865,11 +2865,11 @@ export function useAdminGetConfig<
   TData = Awaited<ReturnType<typeof adminGetConfig>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: (Omit<UseQueryOptions<
     Awaited<ReturnType<typeof adminGetConfig>>,
     TError,
     TData
-  >;
+  >, 'queryKey'> & { queryKey?: QueryKey });
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getAdminGetConfigQueryOptions(options);
@@ -3008,11 +3008,11 @@ export const getAdminGetDepositsQueryOptions = <
 >(
   params?: AdminGetDepositsParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: (Omit<UseQueryOptions<
       Awaited<ReturnType<typeof adminGetDeposits>>,
       TError,
       TData
-    >;
+    >, 'queryKey'> & { queryKey?: QueryKey });
     request?: SecondParameter<typeof customFetch>;
   },
 ) => {
@@ -3047,11 +3047,11 @@ export function useAdminGetDeposits<
 >(
   params?: AdminGetDepositsParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: (Omit<UseQueryOptions<
       Awaited<ReturnType<typeof adminGetDeposits>>,
       TError,
       TData
-    >;
+    >, 'queryKey'> & { queryKey?: QueryKey });
     request?: SecondParameter<typeof customFetch>;
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {

@@ -429,7 +429,7 @@ router.get("/deposit/pesapal/status/:trackingId", async (req: AuthRequest, res) 
     const config = await getConfig();
     const statusResult = await getPesapalOrderStatus(
       { consumerKey: config.pesapalConsumerKey, consumerSecret: config.pesapalConsumerSecret, environment: config.pesapalEnvironment },
-      req.params.trackingId
+      req.params.trackingId as string
     );
 
     if (statusResult.status === "COMPLETED") {

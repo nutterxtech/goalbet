@@ -13,9 +13,9 @@ router.get("/", optionalAuth, async (req, res) => {
     if (status) filter.status = status;
 
     // Completed matches sort newest-first; others sort by scheduled time
-    const sort = status === "completed"
-      ? { completedAt: -1 as const }
-      : { scheduledAt: 1 as const };
+    const sort: Record<string, 1 | -1> = status === "completed"
+      ? { completedAt: -1 }
+      : { scheduledAt: 1 };
 
     const [matches, total] = await Promise.all([
       Match.find(filter).sort(sort).limit(limit),

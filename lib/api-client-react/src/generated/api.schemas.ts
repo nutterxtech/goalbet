@@ -59,7 +59,11 @@ export interface UserProfile {
   totalBets?: number;
   totalWins?: number;
   totalWinnings?: number;
+  totalDeposits?: number;
   createdAt?: string;
+  referralCode?: string;
+  referralCount?: number;
+  referralEarnings?: number;
 }
 
 export interface AuthResponse {
@@ -100,6 +104,7 @@ export const TransactionResponseStatus = {
   pending: "pending",
   completed: "completed",
   rejected: "rejected",
+  failed: "failed",
 } as const;
 
 export interface TransactionResponse {
@@ -112,7 +117,7 @@ export interface TransactionResponse {
   description?: string;
   createdAt: string;
   userId?: string;
-  username?: string;
+  username: string;
 }
 
 export interface TransactionListResponse {

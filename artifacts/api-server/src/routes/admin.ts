@@ -479,7 +479,7 @@ router.post("/matches/:id/open-betting", async (req: AuthRequest, res) => {
 // GET /admin/matches/:id/bet-distribution
 router.get("/matches/:id/bet-distribution", async (req: AuthRequest, res) => {
   try {
-    const matchId = req.params.id;
+    const matchId = req.params.id as string;
     const agg = await Bet.aggregate([
       { $match: { matchId: new (await import("mongoose")).default.Types.ObjectId(matchId), status: "pending" } },
       { $group: { _id: "$outcome", total: { $sum: "$amount" }, count: { $sum: 1 } } },

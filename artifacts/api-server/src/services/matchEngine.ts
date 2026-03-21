@@ -844,9 +844,6 @@ export function startAutoScheduler(): void {
           await Match.create({
             homeTeam: home.name,
             awayTeam: away.name,
-            homeTeamCode: home.code,
-            awayTeamCode: away.code,
-            league: home.league,
             odds: { home: homeOdds, draw: drawOdds, away: awayOdds },
             status: "upcoming",
             scheduledAt: new Date(Date.now() + startDelay),
