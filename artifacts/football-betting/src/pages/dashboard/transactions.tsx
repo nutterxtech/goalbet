@@ -544,7 +544,7 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
               </div>
               <DrawerFooter className="px-5 pt-0 pb-6 shrink-0 flex-row gap-2">
                 <Button variant="outline" className="flex-1" onClick={() => handleClose(false)}>Close</Button>
-                <Button className="flex-1 bg-primary text-primary-foreground" onClick={() => { setStep("amount"); setIframeLoading(true); setIframeBlocked(false); }}>
+                <Button className="flex-1 bg-primary text-primary-foreground" onClick={() => { setStep("amount"); setIframeLoaded(false); }}>
                   Try Again
                 </Button>
               </DrawerFooter>
