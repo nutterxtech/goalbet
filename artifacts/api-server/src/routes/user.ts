@@ -12,6 +12,50 @@ import { submitPesapalOrder, getPesapalOrderStatus } from "../services/pesapalSe
 
 const router = Router();
 
+/**
+ * Credit the referral reward to a user's referrer if:
+ * - The user was referred (has referredBy)
+ * - The bonus has not already been credited (referralBonusCredited === false)
+ * - This is their first qualifying deposit (totalDeposits post-increment === depositAmount,
+ *   meaning previous totalDeposits was 0) AND the deposit is >= minDeposit
+ *
+ * Uses an atomic flag update to prevent race-condition double-credits.
+ */
+async function creditReferralIfEligible(userId: string, depositAmount: number): Promise<void> {
+  try {
+    const cfg = await getConfig();
+    if (depositAmount < cfg.minDeposit) return;
+
+    // Atomically claim the credit slot — returns null if already claimed
+    const claimed = await User.findOneAndUpdate(
+      { _id: userId, referredBy: { $exists: true, $ne: null }, referralBonusCredited: false },
+      { $set: { referralBonusCredited: true } },
+      { new: false }
+    );
+    if (!claimed) return; // Not eligible or already credited
+
+    const referrerId = claimed.referredBy as string;
+    const referrerUsername = claimed.username;
+    const reward = cfg.referralRewardAmount ?? 50;
+
+    await User.findByIdAndUpdate(referrerId, {
+      $inc: { balance: reward, referralEarnings: reward, referralCount: 1 },
+    });
+    await Transaction.create({
+      userId: referrerId, type: "referral_bonus", amount: reward, fee: 0, netAmount: reward,
+      status: "completed",
+      description: `Referral bonus: ${claimed.username} made their first deposit`,
+    });
+    await Notification.create({
+      userId: referrerId, type: "referral_bonus",
+      message: `🎉 ${claimed.username} made their first deposit! Your KSh ${reward} referral reward has been added to your balance.`,
+      data: { referredUser: referrerUsername, amount: reward },
+    });
+  } catch (err) {
+    console.error("creditReferralIfEligible error:", err);
+  }
+}
+
 // Public callback endpoint — no auth (Safaricom calls this)
 router.post("/deposit/mpesa/callback", async (req, res) => {
   try {
@@ -41,6 +85,8 @@ router.post("/deposit/mpesa/callback", async (req, res) => {
         { $inc: { balance: amount, totalDeposits: amount } },
         { new: true }
       );
+
+      await creditReferralIfEligible(tx.userId.toString(), amount);
 
       await Notification.create({
         userId: tx.userId,
@@ -85,6 +131,8 @@ router.post("/deposit/pesapal/ipn", async (req, res) => {
         { $inc: { balance: amount, totalDeposits: amount } },
         { new: true }
       );
+
+      await creditReferralIfEligible(tx.userId.toString(), amount);
 
       await Notification.create({
         userId: tx.userId,
@@ -236,6 +284,7 @@ router.get("/deposit/mpesa/status/:transactionId", async (req: AuthRequest, res)
               { $inc: { balance: tx.amount, totalDeposits: tx.amount } },
               { new: true }
             );
+            await creditReferralIfEligible(tx.userId.toString(), tx.amount);
             await Notification.create({
               userId: tx.userId,
               type: "deposit",
@@ -443,6 +492,8 @@ router.get("/deposit/pesapal/status/:trackingId", async (req: AuthRequest, res) 
         { new: true }
       );
 
+      await creditReferralIfEligible(tx.userId.toString(), amount);
+
       await Notification.create({
         userId: tx.userId,
         type: "deposit",
@@ -482,6 +533,8 @@ router.post("/deposit", async (req: AuthRequest, res) => {
       { $inc: { balance: amount, totalDeposits: amount } },
       { new: true }
     );
+
+    await creditReferralIfEligible(req.user!.id, amount);
 
     const tx = await Transaction.create({
       userId: req.user!.id,

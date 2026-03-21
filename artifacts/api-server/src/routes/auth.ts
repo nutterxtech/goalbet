@@ -80,19 +80,13 @@ router.post("/register", async (req, res) => {
     });
 
     if (referrer) {
+      // Notify referrer that someone joined — reward is credited when the new user makes their first deposit
       const cfg = await getConfig();
       const reward = cfg.referralRewardAmount ?? 50;
-      await User.findByIdAndUpdate(referrer.id, {
-        $inc: { balance: reward, referralEarnings: reward, referralCount: 1 },
-      });
-      await Transaction.create({
-        userId: referrer.id, type: "referral_bonus", amount: reward, fee: 0, netAmount: reward,
-        status: "completed", description: `Referral bonus: ${username} joined using your link`,
-      });
       await Notification.create({
-        userId: referrer.id, type: "referral_bonus",
-        message: `🎉 ${username} joined GoalBet using your referral link! You earned KSh ${reward}.`,
-        data: { referredUser: username, amount: reward },
+        userId: referrer.id, type: "referral_pending",
+        message: `👋 ${username} signed up using your referral link! They need to deposit KSh ${cfg.minDeposit} to unlock your KSh ${reward} reward.`,
+        data: { referredUser: username, pendingReward: reward },
       });
     }
 

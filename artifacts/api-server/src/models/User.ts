@@ -19,6 +19,7 @@ export interface IUser extends Document {
   referredBy?: string;
   referralEarnings: number;
   referralCount: number;
+  referralBonusCredited: boolean;
   pendingConsolationWin: boolean;
   consecutiveLosses: number;
   createdAt: Date;
@@ -44,6 +45,7 @@ const UserSchema = new Schema<IUser>(
     referredBy: { type: String },
     referralEarnings: { type: Number, default: 0 },
     referralCount: { type: Number, default: 0 },
+    referralBonusCredited: { type: Boolean, default: false },
     pendingConsolationWin: { type: Boolean, default: false },
     consecutiveLosses: { type: Number, default: 0 },
   },
