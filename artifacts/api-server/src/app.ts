@@ -1,10 +1,17 @@
 import express, { type Express } from "express";
 import cors from "cors";
+import path from "path";
+import { fileURLToPath } from "url";
 import router from "./routes/index.js";
 import { connectDB } from "./lib/mongodb.js";
 import { User } from "./models/User.js";
 
 const app: Express = express();
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// In production the frontend is built alongside the backend.
+// Resolve the path whether we're running from src/ (dev) or dist/ (prod).
+const FRONTEND_DIST = path.resolve(__dirname, "../../football-betting/dist/public");
 
 async function seedAdminAccount() {
   try {
@@ -46,21 +53,23 @@ app.use(cors({
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
+// API routes — must come before the static file middleware
 app.use("/api", router);
 
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", ts: Date.now() });
 });
 
-// Root — tell humans they have the API URL, not the frontend
-app.get("/", (_req, res) => {
-  res.json({
-    service: "GoalBet API",
-    status: "running",
-    hint: "This is the backend API. Open the GoalBet frontend URL to use the app.",
-    health: "/api/health",
+// Serve the React frontend in production
+if (process.env.NODE_ENV === "production") {
+  // Static assets (JS, CSS, images)
+  app.use(express.static(FRONTEND_DIST));
+
+  // SPA fallback — any unmatched GET returns index.html so client-side routing works
+  app.get("*", (_req, res) => {
+    res.sendFile(path.join(FRONTEND_DIST, "index.html"));
   });
-});
+}
 
 // Global error handler
 app.use((err: any, _req: any, res: any, _next: any) => {
