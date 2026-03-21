@@ -15,7 +15,7 @@ import {
 import { formatCurrency, formatDate } from "@/lib/format";
 import {
   ArrowDownToLine, ArrowUpFromLine, Loader2, Smartphone,
-  CheckCircle2, Share2, Copy, XCircle, Wallet, TrendingUp, Globe,
+  CheckCircle2, Share2, Copy, XCircle, Wallet, TrendingUp, ExternalLink,
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
@@ -182,7 +182,7 @@ export default function TransactionsPage() {
   );
 }
 
-type DepositStep = "amount" | "daraja-waiting" | "pesapal-iframe" | "success" | "failed";
+type DepositStep = "amount" | "daraja-waiting" | "pesapal-waiting" | "success" | "failed";
 
 function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const config = usePublicConfig();
@@ -194,8 +194,7 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
   const [gateway, setGateway] = useState<"daraja" | "pesapal">("daraja");
   const [transactionId, setTransactionId] = useState<string | null>(null);
   const [orderTrackingId, setOrderTrackingId] = useState<string | null>(null);
-  const [pesapalUrl, setPesapalUrl] = useState<string | null>(null);
-  const [iframeLoaded, setIframeLoaded] = useState(false);
+  const pesapalTabRef = useRef<Window | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -214,13 +213,14 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
     queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
   }
 
-  // Listen for postMessage from the /deposit-callback page loaded inside the iframe
+  // Listen for postMessage from the /deposit-callback page opened as a popup/new-tab
   useEffect(() => {
-    if (step !== "pesapal-iframe") return;
+    if (step !== "pesapal-waiting") return;
     function onMessage(e: MessageEvent) {
       if (e.origin !== window.location.origin) return;
       if (e.data?.type === "pesapal-callback") {
         if (pollRef.current) clearInterval(pollRef.current);
+        pesapalTabRef.current = null;
         setStep("success");
         refreshBalances();
       }
@@ -229,10 +229,9 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
     return () => window.removeEventListener("message", onMessage);
   }, [step]);
 
-  // Poll Pesapal status as a backup — delayed 15s so Pesapal page can fully load
-  // before we even ask the gateway for status (avoids false "INVALID" on fresh orders)
+  // Poll Pesapal status — start after 10s to avoid false INVALID on fresh orders
   useEffect(() => {
-    if (step !== "pesapal-iframe" || !orderTrackingId) return;
+    if (step !== "pesapal-waiting" || !orderTrackingId) return;
     const delayId = setTimeout(() => {
       pollRef.current = setInterval(async () => {
         try {
@@ -241,11 +240,19 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
             headers: { Authorization: `Bearer ${token}` },
           });
           const data = await res.json();
-          if (data.status === "completed") { clearInterval(pollRef.current!); setStep("success"); refreshBalances(); }
-          else if (data.status === "failed") { clearInterval(pollRef.current!); setStep("failed"); }
+          if (data.status === "completed") {
+            clearInterval(pollRef.current!);
+            pesapalTabRef.current = null;
+            setStep("success");
+            refreshBalances();
+          } else if (data.status === "failed") {
+            clearInterval(pollRef.current!);
+            pesapalTabRef.current = null;
+            setStep("failed");
+          }
         } catch {}
-      }, 8000);
-    }, 15000);
+      }, 6000);
+    }, 10000);
     return () => { clearTimeout(delayId); if (pollRef.current) clearInterval(pollRef.current); };
   }, [step, orderTrackingId]);
 
@@ -286,9 +293,10 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
         setStep("daraja-waiting");
       } else if (data.method === "pesapal") {
         setOrderTrackingId(data.orderTrackingId);
-        setPesapalUrl(data.redirectUrl);
-        setIframeLoaded(false);
-        setStep("pesapal-iframe");
+        // Open Pesapal in a new tab so it runs without iframe sandbox restrictions
+        const tab = window.open(data.redirectUrl, "_blank", "noopener");
+        pesapalTabRef.current = tab;
+        setStep("pesapal-waiting");
       }
     } catch (err: any) {
       toast({ title: "Deposit Error", description: err.message, variant: "destructive" });
@@ -300,12 +308,14 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
   function handleClose(v: boolean) {
     if (!v) {
       if (pollRef.current) clearInterval(pollRef.current);
+      if (pesapalTabRef.current && !pesapalTabRef.current.closed) {
+        try { pesapalTabRef.current.close(); } catch {}
+      }
+      pesapalTabRef.current = null;
       setStep("amount");
       setAmount("100");
       setTransactionId(null);
       setOrderTrackingId(null);
-      setPesapalUrl(null);
-      setIframeLoaded(false);
     }
     onOpenChange(v);
   }
@@ -313,13 +323,11 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
   const quickAmounts = [minDeposit, minDeposit * 2, minDeposit * 5, minDeposit * 10]
     .filter((v, i, a) => a.indexOf(v) === i);
 
-  const isPesapalIframe = step === "pesapal-iframe";
-
   return (
-    <Drawer open={open} onOpenChange={handleClose} dismissible={!isPesapalIframe}>
+    <Drawer open={open} onOpenChange={handleClose}>
       <DrawerContent
         className="bg-card border-border/60 focus:outline-none"
-        style={{ maxHeight: isPesapalIframe ? "96dvh" : "88dvh" }}
+        style={{ maxHeight: "88dvh" }}
       >
         <div className="mx-auto w-full max-w-lg flex flex-col h-full">
 
@@ -450,53 +458,67 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
             </>
           )}
 
-          {/* ── Pesapal embedded iframe ── */}
-          {step === "pesapal-iframe" && (
+          {/* ── Pesapal new-tab waiting ── */}
+          {step === "pesapal-waiting" && (
             <>
-              {/* Header bar */}
-              <div className="flex items-center justify-between px-4 py-3 border-b border-border/50 shrink-0">
-                <div className="flex items-center gap-2">
-                  <Globe className="w-4 h-4 text-blue-400" />
-                  <span className="text-sm font-bold text-white">Secure Payment</span>
-                  <span className="text-[10px] bg-blue-500/15 border border-blue-500/30 text-blue-400 px-2 py-0.5 rounded-full font-semibold">Pesapal</span>
+              <DrawerHeader className="pt-2 pb-2 px-5 shrink-0">
+                <DrawerTitle className="flex items-center gap-2 text-white">
+                  <ExternalLink className="w-5 h-5 text-blue-400" /> Complete Payment
+                </DrawerTitle>
+                <DrawerDescription>
+                  A Pesapal payment page has opened in a new tab.
+                </DrawerDescription>
+              </DrawerHeader>
+
+              <div className="px-5 py-6 flex flex-col items-center gap-5 flex-1">
+                {/* Animated icon */}
+                <div className="w-24 h-24 rounded-full bg-blue-500/10 border-2 border-blue-500/30 flex items-center justify-center shadow-[0_0_30px_rgba(59,130,246,0.2)]">
+                  <div className="w-10 h-10 rounded-full border-2 border-blue-400/30 border-t-blue-400 animate-spin" />
                 </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-display font-black text-primary">{formatCurrency(parsedAmount)}</span>
-                  <button onClick={() => handleClose(false)} className="text-muted-foreground hover:text-white text-xs font-semibold transition-colors">✕ Close</button>
+
+                <div className="text-center space-y-1">
+                  <p className="text-2xl font-display font-black text-primary">{formatCurrency(parsedAmount)}</p>
+                  <p className="text-sm text-white font-semibold">Waiting for M-Pesa confirmation</p>
+                  <p className="text-xs text-muted-foreground mt-2 leading-relaxed max-w-xs">
+                    Complete your payment in the <span className="text-blue-400 font-semibold">Pesapal tab</span> that opened.
+                    Enter your M-Pesa phone number there and approve the prompt on your phone.
+                  </p>
                 </div>
+
+                {/* Pulsing dots */}
+                <div className="flex gap-1.5 mt-1">
+                  {[0,1,2].map(i => (
+                    <div key={i} className="w-2 h-2 rounded-full bg-blue-400/70 animate-bounce" style={{ animationDelay: `${i * 0.18}s` }} />
+                  ))}
+                </div>
+
+                <p className="text-[11px] text-muted-foreground/60 text-center">
+                  This screen updates automatically once payment is confirmed. 🔒 Secure
+                </p>
               </div>
 
-              {/* Iframe area — fills remaining drawer height, Pesapal scrolls internally */}
-              <div className="relative bg-white flex-1" style={{ minHeight: 0 }}>
-                {!iframeLoaded && (
-                  <div className="absolute inset-0 bg-card flex flex-col items-center justify-center gap-3 z-10">
-                    <div className="w-10 h-10 rounded-full border-2 border-blue-400/30 border-t-blue-400 animate-spin" />
-                    <p className="text-sm text-white font-semibold">Loading Pesapal…</p>
-                  </div>
-                )}
-                {pesapalUrl && (
-                  <iframe
-                    key={pesapalUrl}
-                    src={pesapalUrl}
-                    className="w-full border-0"
-                    style={{ height: "calc(96dvh - 96px)", display: "block" }}
-                    title="Pesapal Payment"
-                    allow="payment *"
-                    onLoad={() => setIframeLoaded(true)}
-                    sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
-                    scrolling="yes"
-                  />
-                )}
-              </div>
-
-              {/* Status bar */}
-              <div className="px-4 py-2 border-t border-border/40 bg-card/80 shrink-0 flex items-center gap-2">
-                <div className="flex gap-1">
-                  {[0,1,2].map(i => <div key={i} className="w-1.5 h-1.5 rounded-full bg-blue-400/60 animate-bounce" style={{ animationDelay: `${i*0.2}s` }} />)}
-                </div>
-                <span className="text-[11px] text-muted-foreground">Watching for payment confirmation…</span>
-                <span className="ml-auto text-[10px] text-muted-foreground/50">🔒 Secure</span>
-              </div>
+              <DrawerFooter className="px-5 pt-0 pb-6 shrink-0 flex flex-col gap-2">
+                <Button
+                  variant="outline"
+                  className="w-full border-blue-500/40 text-blue-400 hover:bg-blue-500/10"
+                  onClick={() => {
+                    if (pesapalTabRef.current && !pesapalTabRef.current.closed) {
+                      pesapalTabRef.current.focus();
+                    } else if (orderTrackingId) {
+                      // Tab was closed by user — let polling handle it, show hint
+                      toast({ title: "Checking status…", description: "We'll update this screen as soon as your payment is confirmed." });
+                    }
+                  }}
+                >
+                  <ExternalLink className="w-4 h-4 mr-2" /> Return to Pesapal Tab
+                </Button>
+                <button
+                  onClick={() => handleClose(false)}
+                  className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors underline-offset-2 hover:underline"
+                >
+                  Cancel and close
+                </button>
+              </DrawerFooter>
             </>
           )}
 
