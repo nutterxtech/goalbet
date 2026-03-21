@@ -466,8 +466,8 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
                 </div>
               </div>
 
-              {/* Iframe area */}
-              <div className="flex-1 relative bg-white overflow-hidden" style={{ minHeight: "480px" }}>
+              {/* Iframe area — fills remaining drawer height, Pesapal scrolls internally */}
+              <div className="relative bg-white flex-1" style={{ minHeight: 0 }}>
                 {!iframeLoaded && (
                   <div className="absolute inset-0 bg-card flex flex-col items-center justify-center gap-3 z-10">
                     <div className="w-10 h-10 rounded-full border-2 border-blue-400/30 border-t-blue-400 animate-spin" />
@@ -478,11 +478,13 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
                   <iframe
                     key={pesapalUrl}
                     src={pesapalUrl}
-                    className="w-full h-full border-0"
+                    className="w-full border-0"
+                    style={{ height: "calc(96dvh - 96px)", display: "block" }}
                     title="Pesapal Payment"
                     allow="payment *"
                     onLoad={() => setIframeLoaded(true)}
                     sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+                    scrolling="yes"
                   />
                 )}
               </div>
