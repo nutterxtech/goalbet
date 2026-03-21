@@ -43,7 +43,7 @@ const adminNavItems = [
   },
   {
     href: "/admin/bets",
-    label: "All Bets",
+    label: "Bet Slips",
     icon: Activity,
     color: "text-violet-400",
     bg: "bg-violet-500/15 border-violet-500/30",

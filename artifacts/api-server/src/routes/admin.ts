@@ -308,6 +308,56 @@ router.post("/matches/:id/start", async (req: AuthRequest, res) => {
   });
 });
 
+// POST /admin/matches/:id/restart — reset a completed/cancelled match to upcoming
+router.post("/matches/:id/restart", async (req: AuthRequest, res) => {
+  const match = await Match.findById(req.params.id);
+  if (!match) { res.status(404).json({ message: "Match not found" }); return; }
+  if (match.status !== "completed" && match.status !== "cancelled") {
+    res.status(400).json({ message: "Only completed or cancelled matches can be restarted" });
+    return;
+  }
+
+  const { startsInMinutes, odds } = req.body;
+  const safeOdds = odds?.home && odds?.draw && odds?.away ? sanitizeOdds(odds) : match.odds;
+  const scheduledAt = startsInMinutes ? new Date(Date.now() + Number(startsInMinutes) * 60_000) : undefined;
+
+  stopMatchSimulation(match.id);
+
+  await Match.findByIdAndUpdate(match.id, {
+    $set: {
+      status: "upcoming",
+      homeScore: 0,
+      awayScore: 0,
+      minute: 0,
+      events: [],
+      odds: safeOdds,
+      totalBets: 0,
+      totalBetAmount: 0,
+      ...(scheduledAt ? { scheduledAt } : {}),
+    },
+    $unset: {
+      result: 1,
+      forcedResult: 1,
+      startedAt: 1,
+      completedAt: 1,
+      bettingClosesAt: 1,
+      simulationTimer: 1,
+      ...(!scheduledAt ? { scheduledAt: 1 } : {}),
+    },
+  });
+
+  const updated = await Match.findById(match.id);
+  await logAction(req.user!.id, "RESTART_MATCH", `Restarted match: ${match.homeTeam} vs ${match.awayTeam}`, match.id, "Match");
+
+  res.json({
+    id: updated!.id, homeTeam: updated!.homeTeam, awayTeam: updated!.awayTeam,
+    homeScore: updated!.homeScore, awayScore: updated!.awayScore,
+    status: updated!.status, odds: updated!.odds, minute: updated!.minute,
+    events: updated!.events, scheduledAt: updated!.scheduledAt,
+    totalBets: updated!.totalBets, totalBetAmount: updated!.totalBetAmount,
+  });
+});
+
 // POST /admin/matches/:id/stop
 router.post("/matches/:id/stop", async (req: AuthRequest, res) => {
   const match = await Match.findById(req.params.id);
@@ -804,6 +854,49 @@ router.get("/bets", async (req: AuthRequest, res) => {
     page,
     totalPages: Math.ceil(total / limit),
     betDistribution,
+  });
+});
+
+// GET /admin/slips — all bet slips with selections and user info
+router.get("/slips", async (req: AuthRequest, res) => {
+  const page = Number(req.query.page) || 1;
+  const limit = Number(req.query.limit) || 20;
+  const skip = (page - 1) * limit;
+  const filter: Record<string, unknown> = {};
+  if (req.query.status) filter.status = req.query.status;
+  if (req.query.userId) filter.userId = req.query.userId;
+
+  const [slips, total] = await Promise.all([
+    BetSlip.find(filter)
+      .populate("userId", "username email")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit),
+    BetSlip.countDocuments(filter),
+  ]);
+
+  res.json({
+    slips: slips.map((s) => {
+      const user = s.userId as any;
+      return {
+        id: s.id,
+        slipId: s.slipId,
+        userId: user?._id?.toString() ?? "",
+        username: user?.username ?? "",
+        selections: s.selections,
+        combinedOdds: s.combinedOdds,
+        stake: s.stake,
+        potentialWinnings: s.potentialWinnings,
+        actualWinnings: s.actualWinnings,
+        status: s.status,
+        createdAt: s.createdAt,
+        settledAt: s.settledAt,
+        adminNote: s.adminNote,
+      };
+    }),
+    total,
+    page,
+    totalPages: Math.ceil(total / limit),
   });
 });
 

@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Loader2, Plus, Play, Square, Trophy, Clock, Radio, CheckCircle2 } from "lucide-react";
+import { Loader2, Plus, Play, Square, Trophy, Clock, Radio, CheckCircle2, RefreshCw, Pencil } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -44,30 +44,26 @@ export default function AdminMatches() {
   const [activeTab, setActiveTab] = useState<TabStatus>("live");
   const [createOpen, setCreateOpen] = useState(false);
   const [forceWinnerMatch, setForceWinnerMatch] = useState<MatchResponse | null>(null);
+  const [restartMatch, setRestartMatch] = useState<MatchResponse | null>(null);
+  const [editOddsMatch, setEditOddsMatch] = useState<MatchResponse | null>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
   const { data, isLoading } = useGetMatches(
-    { status: activeTab, limit: activeTab === "completed" ? 20 : 50 },
+    { status: activeTab, limit: activeTab === "completed" ? 30 : 50 },
     { query: { refetchInterval: activeTab === "live" ? 4000 : 10000 } }
   );
 
   const startMutation = useAdminStartMatch({
     mutation: {
-      onSuccess: () => {
-        toast({ title: "Match Started" });
-        queryClient.invalidateQueries({ queryKey: ["/api/matches"] });
-      },
+      onSuccess: () => { toast({ title: "Match Started" }); queryClient.invalidateQueries({ queryKey: ["/api/matches"] }); },
       onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
     },
   });
 
   const stopMutation = useAdminStopMatch({
     mutation: {
-      onSuccess: () => {
-        toast({ title: "Match Stopped" });
-        queryClient.invalidateQueries({ queryKey: ["/api/matches"] });
-      },
+      onSuccess: () => { toast({ title: "Match Stopped" }); queryClient.invalidateQueries({ queryKey: ["/api/matches"] }); },
       onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
     },
   });
@@ -89,7 +85,6 @@ export default function AdminMatches() {
         </Button>
       </div>
 
-      {/* Tabs */}
       <div className="flex gap-2 mb-6">
         {tabs.map((t) => (
           <button
@@ -110,7 +105,6 @@ export default function AdminMatches() {
         ))}
       </div>
 
-      {/* Match cards */}
       {isLoading ? (
         <div className="flex justify-center py-16">
           <Loader2 className="w-8 h-8 animate-spin text-primary" />
@@ -131,6 +125,8 @@ export default function AdminMatches() {
               onStart={() => startMutation.mutate({ id: match.id })}
               onStop={() => stopMutation.mutate({ id: match.id })}
               onForceWinner={() => setForceWinnerMatch(match)}
+              onRestart={() => setRestartMatch(match)}
+              onEditOdds={() => setEditOddsMatch(match)}
             />
           ))}
         </div>
@@ -138,24 +134,31 @@ export default function AdminMatches() {
 
       <CreateMatchModal open={createOpen} onOpenChange={setCreateOpen} />
       {forceWinnerMatch && (
-        <ForceWinnerModal
-          match={forceWinnerMatch}
-          open={!!forceWinnerMatch}
-          onOpenChange={(open) => { if (!open) setForceWinnerMatch(null); }}
-        />
+        <ForceWinnerModal match={forceWinnerMatch} open={!!forceWinnerMatch}
+          onOpenChange={(o) => { if (!o) setForceWinnerMatch(null); }} />
+      )}
+      {restartMatch && (
+        <RestartMatchModal match={restartMatch} open={!!restartMatch}
+          onOpenChange={(o) => { if (!o) setRestartMatch(null); }} />
+      )}
+      {editOddsMatch && (
+        <EditOddsModal match={editOddsMatch} open={!!editOddsMatch}
+          onOpenChange={(o) => { if (!o) setEditOddsMatch(null); }} />
       )}
     </AdminLayout>
   );
 }
 
 function MatchCard({
-  match, tab, onStart, onStop, onForceWinner,
+  match, tab, onStart, onStop, onForceWinner, onRestart, onEditOdds,
 }: {
   match: MatchResponse;
   tab: TabStatus;
   onStart: () => void;
   onStop: () => void;
   onForceWinner: () => void;
+  onRestart: () => void;
+  onEditOdds: () => void;
 }) {
   const [dist, setDist] = useState<BetDist | null>(null);
 
@@ -207,26 +210,37 @@ function MatchCard({
             </div>
           </div>
 
-          {/* Actions — always on right, never pushed off */}
-          <div className="flex gap-2 shrink-0">
+          {/* Actions */}
+          <div className="flex gap-2 shrink-0 flex-wrap justify-end">
             {tab === "upcoming" && (
-              <Button size="sm" className="bg-primary text-black font-bold hover:bg-primary/90" onClick={onStart}>
-                <Play className="w-3.5 h-3.5 mr-1" /> Start
-              </Button>
+              <>
+                <Button size="sm" className="bg-primary text-black font-bold hover:bg-primary/90" onClick={onStart}>
+                  <Play className="w-3.5 h-3.5 mr-1" /> Start
+                </Button>
+                <Button size="sm" variant="secondary" onClick={onEditOdds} title="Edit odds">
+                  <Pencil className="w-3.5 h-3.5 mr-1" /> Odds
+                </Button>
+                <Button size="sm" variant="secondary" onClick={onForceWinner} title="Pre-set result">
+                  <Trophy className="w-3.5 h-3.5 mr-1" /> Pre-set
+                </Button>
+              </>
             )}
             {tab === "live" && (
               <>
                 <Button size="sm" variant="destructive" onClick={onStop} title="Stop match">
                   <Square className="w-3.5 h-3.5 mr-1" /> Stop
                 </Button>
+                <Button size="sm" variant="secondary" onClick={onEditOdds} title="Edit odds">
+                  <Pencil className="w-3.5 h-3.5 mr-1" /> Odds
+                </Button>
                 <Button size="sm" variant="secondary" onClick={onForceWinner} title="Lock result">
-                  <Trophy className="w-3.5 h-3.5 mr-1" /> Lock Result
+                  <Trophy className="w-3.5 h-3.5 mr-1" /> Lock
                 </Button>
               </>
             )}
-            {tab === "upcoming" && (
-              <Button size="sm" variant="secondary" onClick={onForceWinner} title="Pre-set result">
-                <Trophy className="w-3.5 h-3.5 mr-1" /> Pre-set
+            {tab === "completed" && (
+              <Button size="sm" variant="outline" onClick={onRestart} title="Restart this match">
+                <RefreshCw className="w-3.5 h-3.5 mr-1" /> Restart
               </Button>
             )}
           </div>
@@ -436,6 +450,153 @@ function CreateMatchModal({ open, onOpenChange }: { open: boolean; onOpenChange:
           >
             {mutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
             Create Match
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function RestartMatchModal({ match, open, onOpenChange }: {
+  match: MatchResponse;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const [homeOdd, setHomeOdd] = useState(String(match.odds.home));
+  const [drawOdd, setDrawOdd] = useState(String(match.odds.draw));
+  const [awayOdd, setAwayOdd] = useState(String(match.odds.away));
+  const [minutes, setMinutes] = useState("5");
+  const [loading, setLoading] = useState(false);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  async function handleRestart() {
+    setLoading(true);
+    try {
+      const token = localStorage.getItem("goalbet_token");
+      const resp = await fetch(`${API_BASE}/admin/matches/${match.id}/restart`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          startsInMinutes: parseInt(minutes) || undefined,
+          odds: { home: parseFloat(homeOdd), draw: parseFloat(drawOdd), away: parseFloat(awayOdd) },
+        }),
+      });
+      if (!resp.ok) { const e = await resp.json(); throw new Error(e.message); }
+      toast({ title: "Match Restarted", description: `${match.homeTeam} vs ${match.awayTeam} is now Upcoming.` });
+      queryClient.invalidateQueries({ queryKey: ["/api/matches"] });
+      onOpenChange(false);
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="border-border bg-card max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <RefreshCw className="w-5 h-5 text-primary" /> Restart Match
+          </DialogTitle>
+          <DialogDescription>{match.homeTeam} vs {match.awayTeam} — will be reset to Upcoming</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Starts In (minutes)</label>
+            <Input type="number" min="1" value={minutes} onChange={e => setMinutes(e.target.value)}
+              className="bg-background border-border" placeholder="e.g. 5" />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Odds (1 / X / 2)</label>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { label: match.homeTeam, val: homeOdd, set: setHomeOdd },
+                { label: "Draw",         val: drawOdd, set: setDrawOdd },
+                { label: match.awayTeam, val: awayOdd, set: setAwayOdd },
+              ].map(({ label, val, set }) => (
+                <div key={label} className="space-y-1">
+                  <label className="text-[10px] text-muted-foreground truncate block">{label}</label>
+                  <Input type="number" step="0.01" min="1.01" max="4.5" value={val}
+                    onChange={e => set(e.target.value)} className="bg-background border-border" />
+                </div>
+              ))}
+            </div>
+            <p className="text-[10px] text-muted-foreground">Odds clamped 1.01 – 4.50</p>
+          </div>
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 text-xs text-amber-300">
+            Scores, events, and result will be cleared. Previous bets are not reversed.
+          </div>
+          <Button className="w-full font-bold" onClick={handleRestart} disabled={loading}>
+            {loading && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+            Restart Match
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EditOddsModal({ match, open, onOpenChange }: {
+  match: MatchResponse;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const [homeOdd, setHomeOdd] = useState(String(match.odds.home));
+  const [drawOdd, setDrawOdd] = useState(String(match.odds.draw));
+  const [awayOdd, setAwayOdd] = useState(String(match.odds.away));
+  const [loading, setLoading] = useState(false);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  async function handleSave() {
+    setLoading(true);
+    try {
+      const token = localStorage.getItem("goalbet_token");
+      const resp = await fetch(`${API_BASE}/admin/matches/${match.id}/odds`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ odds: { home: parseFloat(homeOdd), draw: parseFloat(drawOdd), away: parseFloat(awayOdd) } }),
+      });
+      if (!resp.ok) { const e = await resp.json(); throw new Error(e.message); }
+      toast({ title: "Odds Updated" });
+      queryClient.invalidateQueries({ queryKey: ["/api/matches"] });
+      onOpenChange(false);
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="border-border bg-card max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Pencil className="w-5 h-5 text-primary" /> Edit Odds
+          </DialogTitle>
+          <DialogDescription>{match.homeTeam} vs {match.awayTeam}</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { label: `1 – ${match.homeTeam}`, val: homeOdd, set: setHomeOdd },
+              { label: "X – Draw",              val: drawOdd, set: setDrawOdd },
+              { label: `2 – ${match.awayTeam}`, val: awayOdd, set: setAwayOdd },
+            ].map(({ label, val, set }) => (
+              <div key={label} className="space-y-1">
+                <label className="text-[10px] text-muted-foreground truncate block">{label}</label>
+                <Input type="number" step="0.01" min="1.01" max="4.5" value={val}
+                  onChange={e => set(e.target.value)} className="bg-background border-border" />
+              </div>
+            ))}
+          </div>
+          <p className="text-[10px] text-muted-foreground">Range: 1.01 – 4.50. New bets use updated odds immediately.</p>
+          <Button className="w-full font-bold bg-primary text-primary-foreground" onClick={handleSave} disabled={loading}>
+            {loading && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+            Save Odds
           </Button>
         </div>
       </DialogContent>

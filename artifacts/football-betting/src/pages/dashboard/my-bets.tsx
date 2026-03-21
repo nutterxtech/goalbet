@@ -7,7 +7,112 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { Loader2, ChevronRight, Receipt, CheckCircle2, XCircle, Clock, Trophy } from "lucide-react";
+import { Loader2, ChevronRight, Receipt, CheckCircle2, XCircle, Clock, Trophy, Download } from "lucide-react";
+
+function downloadSlipAsPng(slip: BetSlipResponse) {
+  const W = 400, ROW = 62, HDR = 90, SUM = 110, PAD = 30;
+  const H = HDR + slip.selections.length * ROW + SUM + PAD;
+  const canvas = document.createElement("canvas");
+  canvas.width = W * 2; canvas.height = H * 2;
+  const ctx = canvas.getContext("2d")!;
+  ctx.scale(2, 2);
+
+  // Background
+  ctx.fillStyle = "#0d0d14"; ctx.fillRect(0, 0, W, H);
+
+  // Top accent bar
+  const g = ctx.createLinearGradient(0, 0, W, 0);
+  g.addColorStop(0, "#22c55e"); g.addColorStop(1, "#16a34a");
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, 3);
+
+  // Header
+  ctx.fillStyle = "#ffffff"; ctx.font = "bold 17px sans-serif";
+  ctx.fillText("GoalBet", 20, 28);
+  ctx.fillStyle = "#22c55e"; ctx.font = "bold 12px monospace";
+  ctx.fillText(`Slip #${slip.slipId}`, 20, 46);
+  ctx.fillStyle = "#6b7280"; ctx.font = "10px sans-serif";
+  ctx.fillText(slip.createdAt ? new Date(slip.createdAt).toLocaleString() : "", 20, 62);
+
+  const sCol = slip.status === "won" ? "#22c55e" : slip.status === "lost" ? "#ef4444" : "#f59e0b";
+  ctx.fillStyle = sCol; ctx.font = "bold 11px sans-serif";
+  ctx.fillText(slip.status.toUpperCase(), W - 70, 28);
+
+  // Divider
+  ctx.strokeStyle = "#1f2937"; ctx.lineWidth = 0.8;
+  ctx.beginPath(); ctx.moveTo(20, 74); ctx.lineTo(W - 20, 74); ctx.stroke();
+
+  // Selections
+  let y = HDR;
+  for (const sel of slip.selections) {
+    const ok = sel.status === "won", fail = sel.status === "lost";
+    const bgCol = ok ? "rgba(34,197,94,0.06)" : fail ? "rgba(239,68,68,0.06)" : "rgba(255,255,255,0.03)";
+    ctx.fillStyle = bgCol;
+    ctx.fillRect(14, y + 2, W - 28, ROW - 4);
+
+    // status dot
+    ctx.fillStyle = ok ? "#22c55e" : fail ? "#ef4444" : "#6b7280";
+    ctx.beginPath(); ctx.arc(28, y + ROW / 2, 4, 0, Math.PI * 2); ctx.fill();
+
+    ctx.fillStyle = "#9ca3af"; ctx.font = "10px sans-serif";
+    ctx.fillText(`${sel.homeTeam} vs ${sel.awayTeam}`, 40, y + 20);
+
+    const oLabel = sel.outcome === "home" ? `${sel.homeTeam} Win` : sel.outcome === "away" ? `${sel.awayTeam} Win` : "Draw";
+    ctx.fillStyle = "#ffffff"; ctx.font = "bold 12px sans-serif";
+    ctx.fillText(oLabel, 40, y + 38);
+
+    if (sel.matchResult && sel.status !== "pending") {
+      const rLabel = sel.matchResult === "home" ? `${sel.homeTeam} Win` : sel.matchResult === "away" ? `${sel.awayTeam} Win` : "Draw";
+      ctx.fillStyle = "#6b7280"; ctx.font = "10px sans-serif";
+      ctx.fillText(`Result: ${rLabel}`, 40, y + 54);
+    }
+
+    ctx.fillStyle = "#ffffff"; ctx.font = "bold 13px monospace";
+    const oddsText = `${sel.odds.toFixed(2)}x`;
+    const tw = ctx.measureText(oddsText).width;
+    ctx.fillText(oddsText, W - 20 - tw, y + 38);
+
+    ctx.strokeStyle = "#1f2937"; ctx.lineWidth = 0.5;
+    ctx.beginPath(); ctx.moveTo(14, y + ROW); ctx.lineTo(W - 14, y + ROW); ctx.stroke();
+    y += ROW;
+  }
+
+  // Summary box
+  const sy = y + 8;
+  ctx.fillStyle = "#111827"; ctx.fillRect(14, sy, W - 28, SUM - 16);
+
+  const col2 = W / 2;
+  ctx.fillStyle = "#6b7280"; ctx.font = "10px sans-serif";
+  ctx.fillText("Stake", 24, sy + 20);
+  ctx.fillStyle = "#ef4444"; ctx.font = "bold 12px sans-serif";
+  ctx.fillText(`-KSh ${slip.stake.toFixed(2)}`, 24, sy + 36);
+
+  ctx.fillStyle = "#6b7280"; ctx.font = "10px sans-serif";
+  ctx.fillText("Combined Odds", 24, sy + 56);
+  ctx.fillStyle = "#ffffff"; ctx.font = "bold 12px sans-serif";
+  ctx.fillText(`${slip.combinedOdds.toFixed(4)}x`, 24, sy + 72);
+
+  if (slip.status === "won") {
+    ctx.fillStyle = "#6b7280"; ctx.font = "10px sans-serif"; ctx.fillText("Won", col2, sy + 20);
+    ctx.fillStyle = "#22c55e"; ctx.font = "bold 16px sans-serif";
+    ctx.fillText(`KSh ${(slip.actualWinnings ?? 0).toFixed(2)}`, col2, sy + 44);
+  } else if (slip.status === "pending") {
+    ctx.fillStyle = "#6b7280"; ctx.font = "10px sans-serif"; ctx.fillText("Potential Win", col2, sy + 20);
+    ctx.fillStyle = "#22c55e"; ctx.font = "bold 16px sans-serif";
+    ctx.fillText(`KSh ${slip.potentialWinnings.toFixed(2)}`, col2, sy + 44);
+  } else {
+    ctx.fillStyle = "#6b7280"; ctx.font = "10px sans-serif"; ctx.fillText("Result", col2, sy + 20);
+    ctx.fillStyle = "#ef4444"; ctx.font = "bold 13px sans-serif"; ctx.fillText("Slip Lost", col2, sy + 40);
+  }
+
+  // Watermark
+  ctx.fillStyle = "#374151"; ctx.font = "9px sans-serif";
+  ctx.fillText("GoalBet · Bet Responsibly · goalbet.app", 20, H - 8);
+
+  const a = document.createElement("a");
+  a.href = canvas.toDataURL("image/png");
+  a.download = `GoalBet-Slip-${slip.slipId}.png`;
+  a.click();
+}
 
 type SlipStatus = "pending" | "won" | "lost" | "refunded";
 
@@ -218,7 +323,12 @@ function SlipDetailModal({ slip, open, onClose }: { slip: BetSlipResponse; open:
             )}
           </div>
 
-          <Button className="w-full" onClick={onClose}>Close</Button>
+          <div className="flex gap-2">
+            <Button className="flex-1" onClick={onClose} variant="outline">Close</Button>
+            <Button className="flex-1 bg-primary text-primary-foreground" onClick={() => downloadSlipAsPng(slip)}>
+              <Download className="w-4 h-4 mr-2" /> Download
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
