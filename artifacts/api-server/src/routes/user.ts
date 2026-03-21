@@ -377,6 +377,7 @@ router.post("/deposit/initiate", async (req: AuthRequest, res) => {
       paymentGateway: "pesapal",
     });
 
+    const depositPhone = phone || user.phone || "";
     const merchantRef = `GB-PP-${tx.id}`;
     const orderResult = await submitPesapalOrder(
       { consumerKey: config.pesapalConsumerKey, consumerSecret: config.pesapalConsumerSecret, environment: config.pesapalEnvironment },
@@ -388,9 +389,10 @@ router.post("/deposit/initiate", async (req: AuthRequest, res) => {
         callbackUrl: config.pesapalCallbackUrl || `${req.headers.origin}/transactions`,
         ipnId: config.pesapalIpnId,
         email: user.email,
-        phone: phone || user.phone || "",
+        phone: depositPhone,
         firstName: user.username,
         lastName: "User",
+        paymentMethod: depositPhone ? "MPESA" : undefined,
       }
     );
 
@@ -401,8 +403,10 @@ router.post("/deposit/initiate", async (req: AuthRequest, res) => {
     res.json({
       success: true,
       method: "pesapal",
-      message: "Click the link below to complete your payment via Pesapal.",
-      redirectUrl: orderResult.redirectUrl,
+      message: depositPhone
+        ? "M-Pesa prompt sent to your phone. Enter your PIN to confirm."
+        : "Complete your payment via Pesapal.",
+      stkPush: !!depositPhone,
       orderTrackingId: orderResult.orderTrackingId,
       transactionId: tx.id,
     });

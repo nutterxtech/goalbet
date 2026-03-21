@@ -54,6 +54,7 @@ export interface PesapalOrderParams {
   phone?: string;
   firstName?: string;
   lastName?: string;
+  paymentMethod?: string;
 }
 
 export interface PesapalOrderResult {
@@ -67,23 +68,29 @@ export async function submitPesapalOrder(
   params: PesapalOrderParams
 ): Promise<PesapalOrderResult> {
   const token = await getPesapalToken(creds);
+  const orderBody: Record<string, unknown> = {
+    id: params.merchantReference,
+    currency: params.currency ?? "KES",
+    amount: Math.round(params.amount),
+    description: params.description,
+    callback_url: params.callbackUrl,
+    notification_id: params.ipnId,
+    billing_address: {
+      email_address: params.email || "user@goalbet.app",
+      phone_number: params.phone || "",
+      country_code: "KE",
+      first_name: params.firstName || "GoalBet",
+      last_name: params.lastName || "User",
+    },
+  };
+
+  if (params.paymentMethod) {
+    orderBody.payment_method = params.paymentMethod;
+  }
+
   const res = await axios.post(
     `${baseUrl(creds.environment)}/api/Transactions/SubmitOrderRequest`,
-    {
-      id: params.merchantReference,
-      currency: params.currency ?? "KES",
-      amount: Math.round(params.amount),
-      description: params.description,
-      callback_url: params.callbackUrl,
-      notification_id: params.ipnId,
-      billing_address: {
-        email_address: params.email || "user@goalbet.app",
-        phone_number: params.phone || "",
-        country_code: "KE",
-        first_name: params.firstName || "GoalBet",
-        last_name: params.lastName || "User",
-      },
-    },
+    orderBody,
     {
       headers: {
         Authorization: `Bearer ${token}`,

@@ -1,0 +1,62 @@
+services:
+  # ── Backend API (Node.js) ───────────────────────────────────────────────────
+  - type: web
+    name: goalbet-api
+    runtime: node
+    region: frankfurt
+    plan: free
+    rootDir: .
+    buildCommand: npm install -g pnpm && pnpm install --frozen-lockfile && pnpm --filter @workspace/api-zod build 2>/dev/null || true && pnpm --filter @workspace/api-server run build
+    startCommand: node artifacts/api-server/dist/index.cjs
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: MPESA_CONSUMER_KEY
+        sync: false
+      - key: MPESA_CONSUMER_SECRET
+        sync: false
+      - key: MPESA_SHORT_CODE
+        sync: false
+      - key: MPESA_PASSKEY
+        sync: false
+      - key: MPESA_CALLBACK_URL
+        sync: false
+      - key: PESAPAL_CONSUMER_KEY
+        sync: false
+      - key: PESAPAL_CONSUMER_SECRET
+        sync: false
+      - key: PESAPAL_IPN_URL
+        sync: false
+
+  # ── Frontend (Static Site) ──────────────────────────────────────────────────
+  - type: web
+    name: goalbet-frontend
+    runtime: static
+    region: frankfurt
+    plan: free
+    rootDir: .
+    buildCommand: npm install -g pnpm && pnpm install --frozen-lockfile && NODE_ENV=production pnpm --filter @workspace/football-betting run build
+    staticPublishPath: artifacts/football-betting/dist/public
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: no-cache
+      - path: /assets/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: VITE_API_URL
+        sync: false

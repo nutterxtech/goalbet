@@ -129,6 +129,26 @@ pnpm --filter @workspace/api-spec run codegen
 pnpm --filter @workspace/api-client-react run build
 ```
 
+## Payment Flows
+
+- **Daraja (M-Pesa direct)**: `POST /user/deposit/mpesa` → STK push → callback updates balance
+- **Pesapal in-app**: `POST /user/deposit/initiate` with `{amount, phone}` → Pesapal submits order with `payment_method: "MPESA"` → STK push sent directly to user's phone → frontend polls `/user/deposit/pesapal/status/:trackingId` every 4s → no external redirect
+- **Deposit modal**: Vaul `Drawer` bottom sheet (not Dialog) — phone field pre-fills from user profile, quick-amount buttons, "Check your phone" waiting step identical to Daraja flow
+- **Withdrawal**: Vaul `Drawer` bottom sheet — amount + payment details → pending admin approval
+
+## Deployment (Render.com)
+
+`render.yaml` at project root defines two services:
+1. **goalbet-api** (Node.js web service) — builds with pnpm + esbuild, starts with `node artifacts/api-server/dist/index.cjs`
+2. **goalbet-frontend** (Static site) — builds with Vite, publishes from `artifacts/football-betting/dist/public`
+
+Required env vars for Render:
+- `MONGODB_URI`, `JWT_SECRET` (backend)
+- `VITE_API_URL` (frontend, point to deployed API URL)
+- `MPESA_*`, `PESAPAL_*` (optional payment gateway credentials)
+
+Health check endpoint: `GET /api/health` → `{status: "ok", ts: ...}`
+
 ## Development
 
 - Frontend: `pnpm --filter @workspace/football-betting run dev`

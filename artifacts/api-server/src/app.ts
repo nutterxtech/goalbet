@@ -48,6 +48,10 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use("/api", router);
 
+app.get("/api/health", (_req, res) => {
+  res.json({ status: "ok", ts: Date.now() });
+});
+
 // Global error handler
 app.use((err: any, _req: any, res: any, _next: any) => {
   console.error("Unhandled error:", err);
