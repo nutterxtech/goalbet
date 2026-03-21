@@ -229,21 +229,24 @@ function DepositDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
     return () => window.removeEventListener("message", onMessage);
   }, [step]);
 
-  // Poll Pesapal status as a backup in case postMessage doesn't fire
+  // Poll Pesapal status as a backup — delayed 15s so Pesapal page can fully load
+  // before we even ask the gateway for status (avoids false "INVALID" on fresh orders)
   useEffect(() => {
     if (step !== "pesapal-iframe" || !orderTrackingId) return;
-    pollRef.current = setInterval(async () => {
-      try {
-        const token = localStorage.getItem("goalbet_token");
-        const res = await fetch(`${API_BASE}/user/deposit/pesapal/status/${orderTrackingId}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await res.json();
-        if (data.status === "completed") { clearInterval(pollRef.current!); setStep("success"); refreshBalances(); }
-        else if (data.status === "failed") { clearInterval(pollRef.current!); setStep("failed"); }
-      } catch {}
-    }, 4000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+    const delayId = setTimeout(() => {
+      pollRef.current = setInterval(async () => {
+        try {
+          const token = localStorage.getItem("goalbet_token");
+          const res = await fetch(`${API_BASE}/user/deposit/pesapal/status/${orderTrackingId}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const data = await res.json();
+          if (data.status === "completed") { clearInterval(pollRef.current!); setStep("success"); refreshBalances(); }
+          else if (data.status === "failed") { clearInterval(pollRef.current!); setStep("failed"); }
+        } catch {}
+      }, 8000);
+    }, 15000);
+    return () => { clearTimeout(delayId); if (pollRef.current) clearInterval(pollRef.current); };
   }, [step, orderTrackingId]);
 
   // Poll for Daraja status

@@ -451,11 +451,14 @@ router.get("/deposit/pesapal/status/:trackingId", async (req: AuthRequest, res) 
       });
 
       res.json({ status: "completed", amount });
-    } else if (statusResult.status === "FAILED" || statusResult.status === "INVALID") {
+    } else if (statusResult.status === "FAILED" || statusResult.status === "REVERSED") {
+      // Only mark as permanently failed for explicit gateway failures — NOT "INVALID"
+      // "INVALID" just means Pesapal hasn't processed the order yet (normal for fresh orders)
       tx.status = "failed";
       await tx.save();
       res.json({ status: "failed", amount: tx.amount });
     } else {
+      // PENDING, INVALID, or unknown → keep polling
       res.json({ status: "pending", amount: tx.amount });
     }
   } catch (err: any) {
